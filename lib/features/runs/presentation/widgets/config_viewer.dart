@@ -15,13 +15,34 @@ class ConfigViewer extends StatefulWidget {
 
 class _ConfigViewerState extends State<ConfigViewer> {
   bool _expanded = true;
+  String _searchQuery = '';
+  final _searchController = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final entries =
+    final allEntries =
         widget.config.entries
             .where((entry) => !entry.key.startsWith('_'))
             .toList();
+    final entries =
+        _searchQuery.isEmpty
+            ? allEntries
+            : allEntries
+                .where(
+                  (e) =>
+                      e.key.toLowerCase().contains(_searchQuery.toLowerCase()),
+                )
+                .toList();
+    final countText =
+        _searchQuery.isEmpty
+            ? '${allEntries.length} keys'
+            : '${entries.length}/${allEntries.length} keys';
 
     return Card(
       child: Column(
@@ -37,10 +58,7 @@ class _ConfigViewerState extends State<ConfigViewer> {
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                   ),
                   const Spacer(),
-                  Text(
-                    '${entries.length} keys',
-                    style: const TextStyle(color: Colors.white38),
-                  ),
+                  Text(countText, style: const TextStyle(color: Colors.white38)),
                   const SizedBox(width: 8),
                   Icon(
                     _expanded ? Icons.expand_less : Icons.expand_more,
@@ -50,7 +68,30 @@ class _ConfigViewerState extends State<ConfigViewer> {
               ),
             ),
           ),
-          if (_expanded)
+          if (_expanded) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: TextField(
+                controller: _searchController,
+                decoration: InputDecoration(
+                  hintText: 'Filter keys...',
+                  prefixIcon: const Icon(Icons.search, size: 20),
+                  suffixIcon:
+                      _searchQuery.isNotEmpty
+                          ? IconButton(
+                            icon: const Icon(Icons.clear, size: 20),
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() => _searchQuery = '');
+                            },
+                          )
+                          : null,
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                ),
+                onChanged: (v) => setState(() => _searchQuery = v),
+              ),
+            ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
               child: Column(
@@ -65,6 +106,7 @@ class _ConfigViewerState extends State<ConfigViewer> {
                         .toList(),
               ),
             ),
+          ],
         ],
       ),
     );

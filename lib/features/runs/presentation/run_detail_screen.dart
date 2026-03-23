@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/models/run.dart';
 import '../../../core/theme/colors.dart';
@@ -126,7 +127,14 @@ class _RunDetailScreenState extends ConsumerState<RunDetailScreen>
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              SizedBox(width: width * 0.42, child: _OverviewTab(run: run)),
+              SizedBox(
+                width: width * 0.42,
+                child: _OverviewTab(
+                  run: run,
+                  entity: widget.entity,
+                  project: widget.project,
+                ),
+              ),
               const VerticalDivider(width: 1, thickness: 1),
               Expanded(
                 child: Column(
@@ -165,7 +173,14 @@ class _RunDetailScreenState extends ConsumerState<RunDetailScreen>
   }
 
   List<Widget> _buildPrimaryTabs(WandbRun run) {
-    return [_OverviewTab(run: run), ..._buildDetailTabs(run)];
+    return [
+      _OverviewTab(
+        run: run,
+        entity: widget.entity,
+        project: widget.project,
+      ),
+      ..._buildDetailTabs(run),
+    ];
   }
 
   List<Widget> _buildDetailTabs(WandbRun run) {
@@ -267,12 +282,22 @@ class _AppBarTitle extends StatelessWidget {
 }
 
 class _OverviewTab extends StatelessWidget {
-  const _OverviewTab({required this.run});
+  const _OverviewTab({
+    required this.run,
+    required this.entity,
+    required this.project,
+  });
 
   final WandbRun run;
+  final String entity;
+  final String project;
 
   @override
   Widget build(BuildContext context) {
+    final wandbUrl = Uri.parse(
+      'https://wandb.ai/$entity/$project/runs/${run.name}',
+    );
+
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
@@ -282,9 +307,26 @@ class _OverviewTab extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Run Info',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                Row(
+                  children: [
+                    const Text(
+                      'Run Info',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      icon: const Icon(Icons.open_in_new, size: 20),
+                      tooltip: 'Open in W&B',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => launchUrl(
+                        wandbUrl,
+                        mode: LaunchMode.externalApplication,
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 10),
                 _InfoRow('Name', run.displayName),
@@ -294,6 +336,11 @@ class _OverviewTab extends StatelessWidget {
                 if (run.userName != null) _InfoRow('User', run.userName!),
                 if (run.duration != null)
                   _InfoRow('Duration', formatDuration(run.duration!)),
+                if (run.heartbeatAt != null)
+                  _InfoRow(
+                    'Last Updated',
+                    formatRelativeTime(run.heartbeatAt),
+                  ),
                 if (run.tags.isNotEmpty) _InfoRow('Tags', run.tags.join(', ')),
                 if (run.notes != null && run.notes!.isNotEmpty)
                   _InfoRow('Notes', run.notes!),

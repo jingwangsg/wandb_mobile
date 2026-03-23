@@ -3,16 +3,43 @@ import 'package:flutter/material.dart';
 import '../../../../core/utils/format_utils.dart';
 
 /// Table displaying summary metrics for a run.
-class SummaryViewer extends StatelessWidget {
+class SummaryViewer extends StatefulWidget {
   const SummaryViewer({super.key, required this.metrics});
   final Map<String, dynamic> metrics;
 
   @override
+  State<SummaryViewer> createState() => _SummaryViewerState();
+}
+
+class _SummaryViewerState extends State<SummaryViewer> {
+  String _searchQuery = '';
+  final _searchController = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final entries = metrics.entries
+    final allEntries = widget.metrics.entries
         .where((e) => !e.key.startsWith('_'))
         .toList()
       ..sort((a, b) => a.key.compareTo(b.key));
+    final entries =
+        _searchQuery.isEmpty
+            ? allEntries
+            : allEntries
+                .where(
+                  (e) =>
+                      e.key.toLowerCase().contains(_searchQuery.toLowerCase()),
+                )
+                .toList();
+    final countText =
+        _searchQuery.isEmpty
+            ? '${allEntries.length} metrics'
+            : '${entries.length}/${allEntries.length} metrics';
 
     return Card(
       child: Padding(
@@ -26,11 +53,32 @@ class SummaryViewer extends StatelessWidget {
                     style:
                         TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                 const Spacer(),
-                Text('${entries.length} metrics',
+                Text(countText,
                     style: const TextStyle(color: Colors.white38)),
               ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: 'Filter metrics...',
+                prefixIcon: const Icon(Icons.search, size: 20),
+                suffixIcon:
+                    _searchQuery.isNotEmpty
+                        ? IconButton(
+                          icon: const Icon(Icons.clear, size: 20),
+                          onPressed: () {
+                            _searchController.clear();
+                            setState(() => _searchQuery = '');
+                          },
+                        )
+                        : null,
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(vertical: 8),
+              ),
+              onChanged: (v) => setState(() => _searchQuery = v),
+            ),
+            const SizedBox(height: 8),
             ...entries.map((e) => Padding(
                   padding: const EdgeInsets.symmetric(vertical: 3),
                   child: Row(

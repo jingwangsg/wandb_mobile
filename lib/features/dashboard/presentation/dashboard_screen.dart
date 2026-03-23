@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
-
 import '../../../core/theme/colors.dart';
 import '../../auth/providers/auth_providers.dart';
 
@@ -62,44 +60,6 @@ class DashboardScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 16),
 
-              // Quick actions — adaptive grid
-              const Text('Quick Actions',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 8),
-              GridView.count(
-                crossAxisCount: wide ? 4 : 2,
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                mainAxisSpacing: 8,
-                crossAxisSpacing: 8,
-                childAspectRatio: wide ? 1.8 : 1.5,
-                children: [
-                  _ActionCard(
-                    icon: Icons.folder_open,
-                    label: 'Projects',
-                    onTap: () => _switchToTab(context, 1),
-                  ),
-                  _ActionCard(
-                    icon: Icons.play_circle_outline,
-                    label: 'Active Runs',
-                    onTap: () => _switchToTab(context, 1),
-                  ),
-                  if (wide) ...[
-                    _ActionCard(
-                      icon: Icons.show_chart,
-                      label: 'Charts',
-                      onTap: () => _switchToTab(context, 1),
-                    ),
-                    _ActionCard(
-                      icon: Icons.settings,
-                      label: 'Settings',
-                      onTap: () => context.go('/settings'),
-                    ),
-                  ],
-                ],
-              ),
-              const SizedBox(height: 24),
-
               // Tips
               const Text('Getting Started',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
@@ -136,40 +96,4 @@ class DashboardScreen extends ConsumerWidget {
     );
   }
 
-  void _switchToTab(BuildContext context, int index) {
-    // Use StatefulShellRoute to switch tabs
-    if (index == 1) context.go('/projects');
-  }
-}
-
-class _ActionCard extends StatelessWidget {
-  const _ActionCard({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            children: [
-              Icon(icon, size: 32, color: WandbColors.yellow),
-              const SizedBox(height: 8),
-              Text(label, style: const TextStyle(fontWeight: FontWeight.w500)),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }
