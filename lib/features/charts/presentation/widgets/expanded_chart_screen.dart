@@ -56,25 +56,29 @@ class _ExpandedChartScreenState extends State<ExpandedChartScreen> {
                 xAxisMode: widget.xAxisMode,
                 yAxisMin: _rule.resolvedMin,
                 yAxisMax: _rule.resolvedMax,
+                xAxisMin: _rule.resolvedXMin,
+                xAxisMax: _rule.resolvedXMax,
                 showLegend: false,
               ),
             ),
           ),
           const Divider(height: 1),
-          Padding(
-            padding: EdgeInsets.fromLTRB(
-              16,
-              16,
-              16,
-              16 + MediaQuery.of(context).viewPadding.bottom,
-            ),
-            child: MetricChartRuleEditor(
-              metricKey: widget.series.key,
-              initialRule: _rule,
-              onApply: (rule) {
-                setState(() => _rule = rule);
-                widget.onRuleChanged(rule);
-              },
+          Expanded(
+            child: SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(
+                16,
+                16,
+                16,
+                16 + MediaQuery.of(context).viewPadding.bottom,
+              ),
+              child: MetricChartRuleEditor(
+                metricKey: widget.series.key,
+                initialRule: _rule,
+                onApply: (rule) {
+                  setState(() => _rule = rule);
+                  widget.onRuleChanged(rule);
+                },
+              ),
             ),
           ),
         ],

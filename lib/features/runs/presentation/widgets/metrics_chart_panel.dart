@@ -72,7 +72,7 @@ class _MetricsChartPanelState extends ConsumerState<MetricsChartPanel> {
   final Set<String> _selectedKeys = {};
   final Set<String> _expandedGroupPaths = {};
   final Set<String> _collapsedChartGroups = {};
-  bool _selectorVisible = true;
+  bool _selectorVisible = false;
 
   Map<String, MetricChartRule> _rulesByKey = const {};
   bool _loaded = false;

@@ -20,6 +20,8 @@ class WandbLineChart extends StatelessWidget {
     this.title,
     this.yAxisMin,
     this.yAxisMax,
+    this.xAxisMin,
+    this.xAxisMax,
     this.showLegend = true,
   });
 
@@ -29,6 +31,8 @@ class WandbLineChart extends StatelessWidget {
   final String? title;
   final double? yAxisMin;
   final double? yAxisMax;
+  final double? xAxisMin;
+  final double? xAxisMax;
   final bool showLegend;
 
   @override
@@ -118,6 +122,8 @@ class WandbLineChart extends StatelessWidget {
 
           // ─── Axes ──────────────────────────────────────────
           primaryXAxis: NumericAxis(
+            minimum: xAxisMin,
+            maximum: xAxisMax,
             title: AxisTitle(
               text: xAxisMode.label,
               textStyle: const TextStyle(fontSize: 11, color: Colors.white38),

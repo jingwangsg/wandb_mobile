@@ -27,8 +27,12 @@ class _MetricChartRuleEditorState extends State<MetricChartRuleEditor> {
   late double _smoothing;
   late bool _useAutoMin;
   late bool _useAutoMax;
+  late bool _useAutoXMin;
+  late bool _useAutoXMax;
   late final TextEditingController _minController;
   late final TextEditingController _maxController;
+  late final TextEditingController _xMinController;
+  late final TextEditingController _xMaxController;
 
   @override
   void initState() {
@@ -36,11 +40,19 @@ class _MetricChartRuleEditorState extends State<MetricChartRuleEditor> {
     _smoothing = widget.initialRule.smoothing;
     _useAutoMin = widget.initialRule.useAutoMin;
     _useAutoMax = widget.initialRule.useAutoMax;
+    _useAutoXMin = widget.initialRule.useAutoXMin;
+    _useAutoXMax = widget.initialRule.useAutoXMax;
     _minController = TextEditingController(
       text: widget.initialRule.min?.toString() ?? '',
     );
     _maxController = TextEditingController(
       text: widget.initialRule.max?.toString() ?? '',
+    );
+    _xMinController = TextEditingController(
+      text: widget.initialRule.xMin?.toString() ?? '',
+    );
+    _xMaxController = TextEditingController(
+      text: widget.initialRule.xMax?.toString() ?? '',
     );
   }
 
@@ -48,6 +60,8 @@ class _MetricChartRuleEditorState extends State<MetricChartRuleEditor> {
   void dispose() {
     _minController.dispose();
     _maxController.dispose();
+    _xMinController.dispose();
+    _xMaxController.dispose();
     super.dispose();
   }
 
@@ -71,7 +85,7 @@ class _MetricChartRuleEditorState extends State<MetricChartRuleEditor> {
         ),
         const SizedBox(height: 4),
         const Text(
-          'Tune smoothing and Y-axis bounds for this chart only.',
+          'Tune smoothing, Y-axis and X-axis bounds for this chart only.',
           style: TextStyle(color: Colors.white60),
         ),
         const SizedBox(height: 20),
@@ -114,6 +128,22 @@ class _MetricChartRuleEditorState extends State<MetricChartRuleEditor> {
           onChanged: (_) => setState(() {}),
         ),
         const SizedBox(height: 12),
+        _AxisOverrideField(
+          label: 'X Min',
+          autoValue: _useAutoXMin,
+          controller: _xMinController,
+          onAutoChanged: (value) => setState(() => _useAutoXMin = value),
+          onChanged: (_) => setState(() {}),
+        ),
+        const SizedBox(height: 12),
+        _AxisOverrideField(
+          label: 'X Max',
+          autoValue: _useAutoXMax,
+          controller: _xMaxController,
+          onAutoChanged: (value) => setState(() => _useAutoXMax = value),
+          onChanged: (_) => setState(() {}),
+        ),
+        const SizedBox(height: 12),
         if (validationError != null)
           Text(
             validationError,
@@ -128,8 +158,12 @@ class _MetricChartRuleEditorState extends State<MetricChartRuleEditor> {
                   _smoothing = MetricChartRule.defaults.smoothing;
                   _useAutoMin = true;
                   _useAutoMax = true;
+                  _useAutoXMin = true;
+                  _useAutoXMax = true;
                   _minController.clear();
                   _maxController.clear();
+                  _xMinController.clear();
+                  _xMaxController.clear();
                 });
               },
               child: const Text('Reset'),
@@ -161,12 +195,18 @@ class _MetricChartRuleEditorState extends State<MetricChartRuleEditor> {
       min: _parsedValue(_minController.text),
       useAutoMax: _useAutoMax,
       max: _parsedValue(_maxController.text),
+      useAutoXMin: _useAutoXMin,
+      xMin: _parsedValue(_xMinController.text),
+      useAutoXMax: _useAutoXMax,
+      xMax: _parsedValue(_xMaxController.text),
     );
   }
 
   String? get _validationError {
     final min = _useAutoMin ? null : _parsedValue(_minController.text);
     final max = _useAutoMax ? null : _parsedValue(_maxController.text);
+    final xMin = _useAutoXMin ? null : _parsedValue(_xMinController.text);
+    final xMax = _useAutoXMax ? null : _parsedValue(_xMaxController.text);
 
     if (!_useAutoMin && min == null) {
       return 'Y min must be a valid number.';
@@ -176,6 +216,15 @@ class _MetricChartRuleEditorState extends State<MetricChartRuleEditor> {
     }
     if (min != null && max != null && min >= max) {
       return 'Y min must be smaller than Y max.';
+    }
+    if (!_useAutoXMin && xMin == null) {
+      return 'X min must be a valid number.';
+    }
+    if (!_useAutoXMax && xMax == null) {
+      return 'X max must be a valid number.';
+    }
+    if (xMin != null && xMax != null && xMin >= xMax) {
+      return 'X min must be smaller than X max.';
     }
     return null;
   }

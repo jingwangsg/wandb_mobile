@@ -5,6 +5,10 @@ class MetricChartRule {
     this.min,
     this.useAutoMax = true,
     this.max,
+    this.useAutoXMin = true,
+    this.xMin,
+    this.useAutoXMax = true,
+    this.xMax,
   });
 
   static const defaults = MetricChartRule();
@@ -14,9 +18,15 @@ class MetricChartRule {
   final double? min;
   final bool useAutoMax;
   final double? max;
+  final bool useAutoXMin;
+  final double? xMin;
+  final bool useAutoXMax;
+  final double? xMax;
 
   double? get resolvedMin => useAutoMin ? null : min;
   double? get resolvedMax => useAutoMax ? null : max;
+  double? get resolvedXMin => useAutoXMin ? null : xMin;
+  double? get resolvedXMax => useAutoXMax ? null : xMax;
 
   MetricChartRule copyWith({
     double? smoothing,
@@ -26,6 +36,12 @@ class MetricChartRule {
     bool? useAutoMax,
     double? max,
     bool clearMax = false,
+    bool? useAutoXMin,
+    double? xMin,
+    bool clearXMin = false,
+    bool? useAutoXMax,
+    double? xMax,
+    bool clearXMax = false,
   }) {
     return MetricChartRule(
       smoothing: smoothing ?? this.smoothing,
@@ -33,6 +49,10 @@ class MetricChartRule {
       min: clearMin ? null : (min ?? this.min),
       useAutoMax: useAutoMax ?? this.useAutoMax,
       max: clearMax ? null : (max ?? this.max),
+      useAutoXMin: useAutoXMin ?? this.useAutoXMin,
+      xMin: clearXMin ? null : (xMin ?? this.xMin),
+      useAutoXMax: useAutoXMax ?? this.useAutoXMax,
+      xMax: clearXMax ? null : (xMax ?? this.xMax),
     );
   }
 
@@ -43,6 +63,10 @@ class MetricChartRule {
       'min': min,
       'useAutoMax': useAutoMax,
       'max': max,
+      'useAutoXMin': useAutoXMin,
+      'xMin': xMin,
+      'useAutoXMax': useAutoXMax,
+      'xMax': xMax,
     };
   }
 
@@ -53,6 +77,10 @@ class MetricChartRule {
       min: (json['min'] as num?)?.toDouble(),
       useAutoMax: json['useAutoMax'] as bool? ?? true,
       max: (json['max'] as num?)?.toDouble(),
+      useAutoXMin: json['useAutoXMin'] as bool? ?? true,
+      xMin: (json['xMin'] as num?)?.toDouble(),
+      useAutoXMax: json['useAutoXMax'] as bool? ?? true,
+      xMax: (json['xMax'] as num?)?.toDouble(),
     );
   }
 
@@ -64,9 +92,16 @@ class MetricChartRule {
         other.useAutoMin == useAutoMin &&
         other.min == min &&
         other.useAutoMax == useAutoMax &&
-        other.max == max;
+        other.max == max &&
+        other.useAutoXMin == useAutoXMin &&
+        other.xMin == xMin &&
+        other.useAutoXMax == useAutoXMax &&
+        other.xMax == xMax;
   }
 
   @override
-  int get hashCode => Object.hash(smoothing, useAutoMin, min, useAutoMax, max);
+  int get hashCode => Object.hash(
+        smoothing, useAutoMin, min, useAutoMax, max,
+        useAutoXMin, xMin, useAutoXMax, xMax,
+      );
 }
