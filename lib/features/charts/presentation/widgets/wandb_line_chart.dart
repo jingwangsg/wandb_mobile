@@ -4,6 +4,7 @@ import 'package:syncfusion_flutter_charts/charts.dart';
 import '../../../../core/models/metric_point.dart';
 import '../../../../core/theme/colors.dart';
 import '../../../../core/utils/downsampling.dart';
+import '../../../../core/utils/format_utils.dart';
 
 const _minimumTargetPoints = 120;
 const _fallbackTargetPoints = 300;
@@ -17,12 +18,18 @@ class WandbLineChart extends StatelessWidget {
     this.smoothing = 0,
     this.xAxisMode = XAxisMode.step,
     this.title,
+    this.yAxisMin,
+    this.yAxisMax,
+    this.showLegend = true,
   });
 
   final List<MetricSeries> series;
   final double smoothing;
   final XAxisMode xAxisMode;
   final String? title;
+  final double? yAxisMin;
+  final double? yAxisMax;
+  final bool showLegend;
 
   @override
   Widget build(BuildContext context) {
@@ -71,6 +78,13 @@ class WandbLineChart extends StatelessWidget {
             tooltipDisplayMode: TrackballDisplayMode.groupAllPoints,
             lineType: TrackballLineType.vertical,
             lineColor: Colors.white24,
+            markerSettings: const TrackballMarkerSettings(
+              markerVisibility: TrackballVisibilityMode.visible,
+              height: 8,
+              width: 8,
+              borderWidth: 2,
+              borderColor: Colors.white,
+            ),
             tooltipSettings: const InteractiveTooltip(
               color: Color(0xFF2A2A4A),
               borderColor: Colors.white24,
@@ -78,10 +92,25 @@ class WandbLineChart extends StatelessWidget {
               textStyle: TextStyle(fontSize: 11, fontFamily: 'JetBrains Mono'),
             ),
           ),
+          onTrackballPositionChanging: (TrackballArgs args) {
+            final info = args.chartPointInfo;
+            final point = info.chartPoint;
+            if (point == null) return;
+            final xVal = point.x;
+            if (xVal is num) {
+              info.header = _formatXLabel(xVal, xAxisMode);
+            }
+            final yVal = point.y;
+            if (yVal == null) return;
+            final formatted = formatMetricValue(yVal);
+            info.label = series.length == 1
+                ? formatted
+                : '${info.seriesName ?? ''}: $formatted';
+          },
 
           // ─── Legend (bottom on narrow, right on wide) ─────
           legend: Legend(
-            isVisible: processedSeries.length > 1,
+            isVisible: showLegend && processedSeries.length > 1,
             position: wide ? LegendPosition.right : LegendPosition.bottom,
             overflowMode: LegendItemOverflowMode.wrap,
             textStyle: TextStyle(fontSize: fontSize, color: Colors.white70),
@@ -99,6 +128,8 @@ class WandbLineChart extends StatelessWidget {
             enableAutoIntervalOnZooming: true,
           ),
           primaryYAxis: NumericAxis(
+            minimum: yAxisMin,
+            maximum: yAxisMax,
             majorGridLines: const MajorGridLines(color: Colors.white10),
             axisLine: const AxisLine(color: Colors.white24),
             labelStyle: TextStyle(fontSize: fontSize, color: Colors.white38),
@@ -175,4 +206,18 @@ enum XAxisMode {
 
   const XAxisMode(this.label);
   final String label;
+}
+
+String _formatXLabel(num x, XAxisMode mode) {
+  switch (mode) {
+    case XAxisMode.step:
+      return 'Step ${x.toInt()}';
+    case XAxisMode.relativeTime:
+      return '${x.toStringAsFixed(1)}s';
+    case XAxisMode.wallClock:
+      final dt = DateTime.fromMillisecondsSinceEpoch(x.toInt());
+      return '${dt.hour.toString().padLeft(2, '0')}:'
+          '${dt.minute.toString().padLeft(2, '0')}:'
+          '${dt.second.toString().padLeft(2, '0')}';
+  }
 }

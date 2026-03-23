@@ -6,9 +6,12 @@ import 'package:wandb_mobile/core/models/metric_point.dart';
 import 'package:wandb_mobile/core/models/paginated.dart';
 import 'package:wandb_mobile/core/models/run.dart';
 import 'package:wandb_mobile/core/models/run_file.dart';
+import 'package:wandb_mobile/features/charts/providers/chart_preferences_providers.dart';
 import 'package:wandb_mobile/features/runs/data/runs_repository.dart';
 import 'package:wandb_mobile/features/runs/presentation/run_detail_screen.dart';
 import 'package:wandb_mobile/features/runs/providers/runs_providers.dart';
+
+import '../../../test_support/in_memory_run_chart_preferences_store.dart';
 
 class RunDetailRepository extends RunsRepository {
   RunDetailRepository() : super(GraphqlClient(apiKey: 'test'));
@@ -101,6 +104,9 @@ void main() {
       ProviderScope(
         overrides: [
           runsRepositoryProvider.overrideWithValue(RunDetailRepository()),
+          runChartPreferencesStoreProvider.overrideWithValue(
+            InMemoryRunChartPreferencesStore(),
+          ),
         ],
         child: const MaterialApp(
           home: Scaffold(

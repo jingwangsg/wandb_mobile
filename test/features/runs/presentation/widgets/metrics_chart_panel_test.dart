@@ -5,9 +5,15 @@ import 'package:wandb_mobile/core/api/graphql_client.dart';
 import 'package:wandb_mobile/core/diagnostics/runtime_diagnostics.dart';
 import 'package:wandb_mobile/core/models/metric_point.dart';
 import 'package:wandb_mobile/core/models/run.dart';
+import 'package:wandb_mobile/features/charts/models/metric_chart_rule.dart';
+import 'package:wandb_mobile/features/charts/models/run_chart_preferences.dart';
+import 'package:wandb_mobile/features/charts/presentation/widgets/wandb_line_chart.dart';
+import 'package:wandb_mobile/features/charts/providers/chart_preferences_providers.dart';
 import 'package:wandb_mobile/features/runs/data/runs_repository.dart';
 import 'package:wandb_mobile/features/runs/presentation/widgets/metrics_chart_panel.dart';
 import 'package:wandb_mobile/features/runs/providers/runs_providers.dart';
+
+import '../../../../test_support/in_memory_run_chart_preferences_store.dart';
 
 class RecordingRunsRepository extends RunsRepository {
   RecordingRunsRepository({this.error, this.pointCount = 2})
@@ -95,18 +101,40 @@ const _trainMetricsRun = WandbRun(
   },
 );
 
+const _singleMetricRun = WandbRun(
+  id: 'single-run-id',
+  name: 'single-metric-run',
+  displayName: 'single',
+  state: RunState.finished,
+  historyKeys: {
+    'keys': {
+      'train/loss': {
+        'typeCounts': [
+          {'type': 'number', 'count': 50},
+        ],
+      },
+    },
+  },
+);
+
 Widget _buildMetricsPanel({
   required RecordingRunsRepository repository,
   required WandbRun run,
   required double width,
+  InMemoryRunChartPreferencesStore? preferenceStore,
 }) {
   return ProviderScope(
-    overrides: [runsRepositoryProvider.overrideWithValue(repository)],
+    overrides: [
+      runsRepositoryProvider.overrideWithValue(repository),
+      runChartPreferencesStoreProvider.overrideWithValue(
+        preferenceStore ?? InMemoryRunChartPreferencesStore(),
+      ),
+    ],
     child: MaterialApp(
       home: Scaffold(
         body: SizedBox(
           width: width,
-          height: 600,
+          height: 1000,
           child: MetricsChartPanel(
             entity: 'nv-gear',
             project: 'n1d6_ttt_fm_assembly',
@@ -167,7 +195,12 @@ void main() {
 
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [runsRepositoryProvider.overrideWithValue(repository)],
+        overrides: [
+          runsRepositoryProvider.overrideWithValue(repository),
+          runChartPreferencesStoreProvider.overrideWithValue(
+            InMemoryRunChartPreferencesStore(),
+          ),
+        ],
         child: MaterialApp(
           home: Scaffold(
             body: SizedBox(
@@ -208,7 +241,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Failed to load metrics'), findsNothing);
-      expect(find.byType(Slider), findsOneWidget);
+      expect(find.byType(WandbLineChart), findsAtLeastNWidgets(2));
+      expect(find.byType(Slider), findsNothing);
       expect(tester.takeException(), isNull);
     },
   );
@@ -228,12 +262,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Failed to load metrics'), findsNothing);
-      expect(find.byType(Slider), findsOneWidget);
-      expect(tester.takeException(), isNull);
-
-      await tester.drag(find.byType(Slider), const Offset(120, 0));
-      await tester.pumpAndSettle();
-
+      expect(find.byType(WandbLineChart), findsAtLeastNWidgets(2));
+      expect(find.byType(Slider), findsNothing);
       expect(tester.takeException(), isNull);
     },
   );
@@ -275,5 +305,64 @@ void main() {
     expect(find.text('Select Metrics'), findsOneWidget);
     expect(find.text('train'), findsWidgets);
     expect(find.text('flow_matching_loss'), findsOneWidget);
+  });
+
+  testWidgets('restores per-chart rules from saved preferences', (
+    tester,
+  ) async {
+    final repository = RecordingRunsRepository(pointCount: 50);
+    final preferenceStore = InMemoryRunChartPreferencesStore();
+    await preferenceStore.saveSelectedKeys(
+      entity: 'nv-gear',
+      project: 'n1d6_ttt_fm_assembly',
+      runName: _singleMetricRun.name,
+      scope: ChartPreferenceScope.metrics,
+      keys: const ['train/loss'],
+    );
+    await preferenceStore.saveRule(
+      entity: 'nv-gear',
+      project: 'n1d6_ttt_fm_assembly',
+      runName: _singleMetricRun.name,
+      scope: ChartPreferenceScope.metrics,
+      key: 'train/loss',
+      rule: const MetricChartRule(
+        useAutoMin: false,
+        min: 0.1,
+        useAutoMax: false,
+        max: 0.9,
+      ),
+    );
+
+    await tester.pumpWidget(
+      _buildMetricsPanel(
+        repository: repository,
+        run: _singleMetricRun,
+        width: 700,
+        preferenceStore: preferenceStore,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    var chart = tester.widget<WandbLineChart>(
+      find.byKey(const Key('metric-chart-train/loss')),
+    );
+    expect(chart.yAxisMin, 0.1);
+    expect(chart.yAxisMax, 0.9);
+
+    await tester.pumpWidget(
+      _buildMetricsPanel(
+        repository: repository,
+        run: _singleMetricRun,
+        width: 700,
+        preferenceStore: preferenceStore,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    chart = tester.widget<WandbLineChart>(
+      find.byKey(const Key('metric-chart-train/loss')),
+    );
+    expect(chart.yAxisMin, 0.1);
+    expect(chart.yAxisMax, 0.9);
   });
 }

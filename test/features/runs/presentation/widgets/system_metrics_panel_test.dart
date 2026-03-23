@@ -2,9 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wandb_mobile/core/api/graphql_client.dart';
+import 'package:wandb_mobile/features/charts/presentation/widgets/wandb_line_chart.dart';
+import 'package:wandb_mobile/features/charts/providers/chart_preferences_providers.dart';
 import 'package:wandb_mobile/features/runs/data/runs_repository.dart';
 import 'package:wandb_mobile/features/runs/presentation/widgets/system_metrics_panel.dart';
 import 'package:wandb_mobile/features/runs/providers/runs_providers.dart';
+
+import '../../../../test_support/in_memory_run_chart_preferences_store.dart';
 
 class SystemRunsRepository extends RunsRepository {
   SystemRunsRepository(this.rows) : super(GraphqlClient(apiKey: 'test'));
@@ -24,12 +28,17 @@ class SystemRunsRepository extends RunsRepository {
 
 Widget _buildSystemPanel(SystemRunsRepository repository) {
   return ProviderScope(
-    overrides: [runsRepositoryProvider.overrideWithValue(repository)],
+    overrides: [
+      runsRepositoryProvider.overrideWithValue(repository),
+      runChartPreferencesStoreProvider.overrideWithValue(
+        InMemoryRunChartPreferencesStore(),
+      ),
+    ],
     child: const MaterialApp(
       home: Scaffold(
         body: SizedBox(
           width: 700,
-          height: 600,
+          height: 1000,
           child: SystemMetricsPanel(
             entity: 'nv-gear',
             project: 'n1d6_ttt_fm_assembly',
@@ -66,7 +75,8 @@ void main() {
     expect(find.text('system'), findsWidgets);
     expect(find.text('gpu'), findsWidgets);
     expect(find.text('utilization'), findsOneWidget);
-    expect(find.byType(Slider), findsOneWidget);
+    expect(find.byType(WandbLineChart), findsAtLeastNWidgets(2));
+    expect(find.byType(Slider), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

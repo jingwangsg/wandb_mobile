@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -5,7 +7,11 @@ import '../../../../core/diagnostics/diagnostic_format.dart';
 import '../../../../core/diagnostics/runtime_diagnostics.dart';
 import '../../../../core/models/metric_point.dart';
 import '../../../../core/models/run.dart';
-import '../../../charts/presentation/widgets/wandb_line_chart.dart';
+import '../../../../core/widgets/wandb_mark_icon.dart';
+import '../../../charts/models/metric_chart_rule.dart';
+import '../../../charts/models/run_chart_preferences.dart';
+import '../../../charts/presentation/widgets/grouped_chart_area.dart';
+import '../../../charts/providers/chart_preferences_providers.dart';
 import '../../providers/runs_providers.dart';
 import 'grouped_metric_selector.dart';
 
@@ -65,10 +71,12 @@ class MetricsChartPanel extends ConsumerStatefulWidget {
 class _MetricsChartPanelState extends ConsumerState<MetricsChartPanel> {
   final Set<String> _selectedKeys = {};
   final Set<String> _expandedGroupPaths = {};
+  final Set<String> _collapsedChartGroups = {};
 
-  double _smoothing = 0.0;
+  Map<String, MetricChartRule> _rulesByKey = const {};
   bool _loaded = false;
   bool _loading = false;
+  bool _restoringPreferences = true;
   String? _error;
   int _requestSequence = 0;
   List<MetricSeries> _series = [];
@@ -110,14 +118,7 @@ class _MetricsChartPanelState extends ConsumerState<MetricsChartPanel> {
   @override
   void initState() {
     super.initState();
-    final defaultKeys = _defaultMetricKeys;
-    if (defaultKeys.isNotEmpty) {
-      _selectedKeys.addAll(defaultKeys);
-      for (final key in defaultKeys) {
-        _expandedGroupPaths.addAll(metricGroupPathsForKey(key));
-      }
-      _loadMetrics();
-    }
+    _restorePreferencesAndLoad();
   }
 
   Future<void> _loadMetrics() async {
@@ -198,6 +199,53 @@ class _MetricsChartPanelState extends ConsumerState<MetricsChartPanel> {
     }
   }
 
+  Future<void> _restorePreferencesAndLoad() async {
+    final availableKeys = _availableKeys;
+    if (availableKeys.isEmpty) {
+      if (!mounted) return;
+      setState(() => _restoringPreferences = false);
+      return;
+    }
+
+    final store = ref.read(runChartPreferencesStoreProvider);
+    final preferences = await store.read(
+      entity: widget.entity,
+      project: widget.project,
+      runName: widget.runName,
+    );
+    if (!mounted) return;
+
+    final restoredKeys = preferences
+        .selectedKeysFor(ChartPreferenceScope.metrics)
+        .where(availableKeys.contains)
+        .toList(growable: false);
+    final nextSelected =
+        restoredKeys.isNotEmpty ? restoredKeys : _defaultMetricKeys;
+    final nextExpanded = <String>{};
+    for (final key in nextSelected) {
+      nextExpanded.addAll(metricGroupPathsForKey(key));
+    }
+
+    final nextRules = <String, MetricChartRule>{
+      for (final entry
+          in preferences.rulesFor(ChartPreferenceScope.metrics).entries)
+        if (availableKeys.contains(entry.key)) entry.key: entry.value,
+    };
+
+    setState(() {
+      _selectedKeys
+        ..clear()
+        ..addAll(nextSelected);
+      _expandedGroupPaths
+        ..clear()
+        ..addAll(nextExpanded);
+      _rulesByKey = Map.unmodifiable(nextRules);
+      _restoringPreferences = false;
+    });
+
+    await _loadMetrics();
+  }
+
   void _toggleMetricSelection(String key) {
     setState(() {
       if (_selectedKeys.contains(key)) {
@@ -207,6 +255,7 @@ class _MetricsChartPanelState extends ConsumerState<MetricsChartPanel> {
         _expandedGroupPaths.addAll(metricGroupPathsForKey(key));
       }
     });
+    unawaited(_persistSelection());
     _loadMetrics();
   }
 
@@ -291,6 +340,9 @@ class _MetricsChartPanelState extends ConsumerState<MetricsChartPanel> {
     if (availableKeys.isEmpty) {
       return const Center(child: Text('No metrics logged'));
     }
+    if (_restoringPreferences && !_loaded) {
+      return const Center(child: CircularProgressIndicator());
+    }
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -337,7 +389,6 @@ class _MetricsChartPanelState extends ConsumerState<MetricsChartPanel> {
                         padding: const EdgeInsets.only(bottom: 8),
                       ),
                     ),
-                    _buildSmoothingControl(compact: true),
                   ],
                 ),
               ),
@@ -355,7 +406,7 @@ class _MetricsChartPanelState extends ConsumerState<MetricsChartPanel> {
                 children: [
                   FilledButton.tonalIcon(
                     onPressed: _showMetricSelectorSheet,
-                    icon: const Icon(Icons.tune),
+                    icon: const WandbMarkIcon(size: 18, compact: true),
                     label: Text('Metrics (${_selectedKeys.length})'),
                   ),
                   const SizedBox(width: 12),
@@ -371,7 +422,6 @@ class _MetricsChartPanelState extends ConsumerState<MetricsChartPanel> {
               ),
             ),
             Expanded(child: _buildChartArea()),
-            if (_loaded && _series.isNotEmpty) _buildSmoothingControl(),
           ],
         );
       },
@@ -393,49 +443,65 @@ class _MetricsChartPanelState extends ConsumerState<MetricsChartPanel> {
     }
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 0, 12, 0),
-      child: WandbLineChart(series: _series, smoothing: _smoothing),
+      padding: const EdgeInsets.fromLTRB(4, 0, 12, 8),
+      child: GroupedChartArea(
+        series: _selectedSeries,
+        rulesByKey: _rulesByKey,
+        collapsedGroups: _collapsedChartGroups,
+        onToggleGroup: (group) {
+          setState(() {
+            if (_collapsedChartGroups.contains(group)) {
+              _collapsedChartGroups.remove(group);
+            } else {
+              _collapsedChartGroups.add(group);
+            }
+          });
+        },
+        onRuleChanged: _updateRule,
+      ),
     );
   }
 
-  Widget _buildSmoothingControl({bool compact = false}) {
-    if (!_loaded || _series.isEmpty) return const SizedBox.shrink();
+  List<MetricSeries> get _selectedSeries {
+    final seriesByKey = {for (final series in _series) series.key: series};
 
-    return Padding(
-      padding: EdgeInsets.fromLTRB(compact ? 8 : 16, 0, compact ? 8 : 16, 8),
-      child: Row(
-        children: [
-          Text(
-            'Smooth',
-            style: TextStyle(
-              fontSize: compact ? 10 : 12,
-              color: Colors.white54,
-            ),
+    return _selectedKeys
+        .map(
+          (key) =>
+              seriesByKey[key] ??
+              MetricSeries(key: key, points: const <MetricPoint>[]),
+        )
+        .toList(growable: false);
+  }
+
+  void _updateRule(String key, MetricChartRule rule) {
+    setState(() {
+      _rulesByKey = Map.unmodifiable({..._rulesByKey, key: rule});
+    });
+    unawaited(
+      ref
+          .read(runChartPreferencesStoreProvider)
+          .saveRule(
+            entity: widget.entity,
+            project: widget.project,
+            runName: widget.runName,
+            scope: ChartPreferenceScope.metrics,
+            key: key,
+            rule: rule,
           ),
-          Expanded(
-            child: Slider(
-              value: _smoothing,
-              min: 0,
-              max: 0.99,
-              divisions: 99,
-              label: _smoothing.toStringAsFixed(2),
-              onChanged: (value) => setState(() => _smoothing = value),
-            ),
-          ),
-          if (!compact)
-            SizedBox(
-              width: 40,
-              child: Text(
-                _smoothing.toStringAsFixed(2),
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontFamily: 'JetBrains Mono',
-                ),
-              ),
-            ),
-        ],
-      ),
     );
+  }
+
+  Future<void> _persistSelection() {
+    return ref
+        .read(runChartPreferencesStoreProvider)
+        .saveSelectedKeys(
+          entity: widget.entity,
+          project: widget.project,
+          runName: widget.runName,
+          scope: ChartPreferenceScope.metrics,
+          keys: _selectedKeys.toList(growable: false),
+        );
   }
 
   Widget _buildErrorView() {

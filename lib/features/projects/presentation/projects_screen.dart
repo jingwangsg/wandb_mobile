@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/models/project.dart';
 import '../../../core/utils/format_utils.dart';
 import '../../../core/utils/responsive.dart';
+import '../../../core/widgets/wandb_mark_icon.dart';
 import '../../auth/providers/auth_providers.dart';
 import '../providers/projects_providers.dart';
 
@@ -56,29 +58,35 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
           // Project list
           Expanded(
             child: projectsAsync.when(
-              loading: () =>
-                  const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text('Error: $e'),
-                    const SizedBox(height: 8),
-                    FilledButton(
-                      onPressed: () =>
-                          ref.read(projectsProvider(entity).notifier).refresh(),
-                      child: const Text('Retry'),
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error:
+                  (e, _) => Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text('Error: $e'),
+                        const SizedBox(height: 8),
+                        FilledButton(
+                          onPressed:
+                              () =>
+                                  ref
+                                      .read(projectsProvider(entity).notifier)
+                                      .refresh(),
+                          child: const Text('Retry'),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-              ),
+                  ),
               data: (result) {
-                final filtered = _searchQuery.isEmpty
-                    ? result.items
-                    : result.items
-                        .where((p) =>
-                            p.name.toLowerCase().contains(_searchQuery))
-                        .toList();
+                final filtered =
+                    _searchQuery.isEmpty
+                        ? result.items
+                        : result.items
+                            .where(
+                              (p) =>
+                                  p.name.toLowerCase().contains(_searchQuery),
+                            )
+                            .toList();
 
                 return LayoutBuilder(
                   builder: (context, constraints) {
@@ -86,55 +94,57 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
                     final pad = adaptivePadding(constraints.maxWidth);
 
                     return RefreshIndicator(
-                      onRefresh: () => ref
-                          .read(projectsProvider(entity).notifier)
-                          .refresh(),
-                      child: cols == 1
-                          ? ListView.builder(
-                              padding: EdgeInsets.symmetric(horizontal: pad),
-                              itemCount: filtered.length +
-                                  (result.hasNextPage ? 1 : 0),
-                              itemBuilder: (context, index) {
-                                if (index == filtered.length) {
-                                  ref
-                                      .read(
-                                          projectsProvider(entity).notifier)
-                                      .loadMore();
-                                  return const Center(
-                                    child: Padding(
-                                      padding: EdgeInsets.all(16),
-                                      child: CircularProgressIndicator(),
+                      onRefresh:
+                          () =>
+                              ref
+                                  .read(projectsProvider(entity).notifier)
+                                  .refresh(),
+                      child:
+                          cols == 1
+                              ? ListView.builder(
+                                padding: EdgeInsets.symmetric(horizontal: pad),
+                                itemCount:
+                                    filtered.length +
+                                    (result.hasNextPage ? 1 : 0),
+                                itemBuilder: (context, index) {
+                                  if (index == filtered.length) {
+                                    ref
+                                        .read(projectsProvider(entity).notifier)
+                                        .loadMore();
+                                    return const Center(
+                                      child: Padding(
+                                        padding: EdgeInsets.all(16),
+                                        child: CircularProgressIndicator(),
+                                      ),
+                                    );
+                                  }
+                                  return _ProjectTile(project: filtered[index]);
+                                },
+                              )
+                              : GridView.builder(
+                                padding: EdgeInsets.all(pad),
+                                gridDelegate:
+                                    SliverGridDelegateWithFixedCrossAxisCount(
+                                      crossAxisCount: cols,
+                                      mainAxisSpacing: 8,
+                                      crossAxisSpacing: 8,
+                                      childAspectRatio: 2.5,
                                     ),
-                                  );
-                                }
-                                return _ProjectTile(
-                                    project: filtered[index]);
-                              },
-                            )
-                          : GridView.builder(
-                              padding: EdgeInsets.all(pad),
-                              gridDelegate:
-                                  SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: cols,
-                                mainAxisSpacing: 8,
-                                crossAxisSpacing: 8,
-                                childAspectRatio: 2.5,
+                                itemCount:
+                                    filtered.length +
+                                    (result.hasNextPage ? 1 : 0),
+                                itemBuilder: (context, index) {
+                                  if (index == filtered.length) {
+                                    ref
+                                        .read(projectsProvider(entity).notifier)
+                                        .loadMore();
+                                    return const Center(
+                                      child: CircularProgressIndicator(),
+                                    );
+                                  }
+                                  return _ProjectTile(project: filtered[index]);
+                                },
                               ),
-                              itemCount: filtered.length +
-                                  (result.hasNextPage ? 1 : 0),
-                              itemBuilder: (context, index) {
-                                if (index == filtered.length) {
-                                  ref
-                                      .read(
-                                          projectsProvider(entity).notifier)
-                                      .loadMore();
-                                  return const Center(
-                                      child: CircularProgressIndicator());
-                                }
-                                return _ProjectTile(
-                                    project: filtered[index]);
-                              },
-                            ),
                     );
                   },
                 );
@@ -152,66 +162,74 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
 
     showModalBottomSheet(
       context: context,
-      builder: (context) => ListView(
-        shrinkWrap: true,
-        children: [
-          const Padding(
-            padding: EdgeInsets.all(16),
-            child: Text(
-              'Select Entity',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-          ),
-          ...entities.map((e) => ListTile(
-                leading: Icon(
-                  e == auth.user?.entity ? Icons.person : Icons.group,
+      builder:
+          (context) => ListView(
+            shrinkWrap: true,
+            children: [
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: Text(
+                  'Select Entity',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
-                title: Text(e),
-                selected: e == auth.entity,
-                onTap: () {
-                  ref.read(authProvider.notifier).selectEntity(e);
-                  Navigator.pop(context);
-                },
-              )),
-        ],
-      ),
+              ),
+              ...entities.map(
+                (e) => ListTile(
+                  leading: Icon(
+                    e == auth.user?.entity ? Icons.person : Icons.group,
+                  ),
+                  title: Text(e),
+                  selected: e == auth.entity,
+                  onTap: () {
+                    ref.read(authProvider.notifier).selectEntity(e);
+                    Navigator.pop(context);
+                  },
+                ),
+              ),
+            ],
+          ),
     );
   }
 }
 
 class _ProjectTile extends StatelessWidget {
   const _ProjectTile({required this.project});
-  final dynamic project; // WandbProject
+  final WandbProject project;
 
   @override
   Widget build(BuildContext context) {
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        leading: const WandbMarkIcon(size: 28),
         title: Text(
           project.name,
           style: const TextStyle(fontWeight: FontWeight.w600),
         ),
-        subtitle: project.description != null && project.description!.isNotEmpty
-            ? Text(
-                project.description!,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: Colors.white54),
-              )
-            : null,
+        subtitle:
+            project.description != null && project.description!.isNotEmpty
+                ? Text(
+                  project.description!,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.white54),
+                )
+                : null,
         trailing: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            const Icon(Icons.chevron_right, color: Colors.white38),
+            Text(
+              _formatRunCount(project.runCount),
+              style: Theme.of(context).textTheme.labelSmall,
+            ),
             if (project.createdAt != null)
               Text(
                 formatRelativeTime(project.createdAt),
                 style: Theme.of(context).textTheme.labelSmall,
               ),
+            const Icon(Icons.chevron_right, color: Colors.white38),
           ],
         ),
         onTap: () {
@@ -220,4 +238,9 @@ class _ProjectTile extends StatelessWidget {
       ),
     );
   }
+}
+
+String _formatRunCount(int runCount) {
+  if (runCount == 1) return '1 run';
+  return '$runCount runs';
 }

@@ -5,6 +5,7 @@ class WandbProject {
     required this.entityName,
     this.description,
     this.createdAt,
+    this.runCount = 0,
     this.isBenchmark = false,
     this.userName,
   });
@@ -14,6 +15,7 @@ class WandbProject {
   final String entityName;
   final String? description;
   final DateTime? createdAt;
+  final int runCount;
   final bool isBenchmark;
   final String? userName;
 
@@ -23,9 +25,11 @@ class WandbProject {
       name: json['name'] as String,
       entityName: json['entityName'] as String,
       description: json['description'] as String?,
-      createdAt: json['createdAt'] != null
-          ? DateTime.tryParse(json['createdAt'] as String)
-          : null,
+      createdAt:
+          json['createdAt'] != null
+              ? DateTime.tryParse(json['createdAt'] as String)
+              : null,
+      runCount: json['runCount'] as int? ?? 0,
       isBenchmark: json['isBenchmark'] as bool? ?? false,
       userName: (json['user'] as Map<String, dynamic>?)?['username'] as String?,
     );

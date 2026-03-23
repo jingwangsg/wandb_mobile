@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,7 +7,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/diagnostics/diagnostic_format.dart';
 import '../../../../core/diagnostics/runtime_diagnostics.dart';
 import '../../../../core/models/metric_point.dart';
+import '../../../../core/widgets/wandb_mark_icon.dart';
+import '../../../charts/models/metric_chart_rule.dart';
+import '../../../charts/models/run_chart_preferences.dart';
+import '../../../charts/presentation/widgets/grouped_chart_area.dart';
 import '../../../charts/presentation/widgets/wandb_line_chart.dart';
+import '../../../charts/providers/chart_preferences_providers.dart';
 import '../../providers/runs_providers.dart';
 import 'grouped_metric_selector.dart';
 
@@ -50,8 +56,9 @@ class SystemMetricsPanel extends ConsumerStatefulWidget {
 class _SystemMetricsPanelState extends ConsumerState<SystemMetricsPanel> {
   final Set<String> _selectedKeys = {};
   final Set<String> _expandedGroupPaths = {};
+  final Set<String> _collapsedChartGroups = {};
 
-  double _smoothing = 0.0;
+  Map<String, MetricChartRule> _rulesByKey = const {};
   bool _loaded = false;
   bool _loading = false;
   String? _error;
@@ -99,8 +106,22 @@ class _SystemMetricsPanelState extends ConsumerState<SystemMetricsPanel> {
       final dataset = _SystemMetricsDataset.fromRows(rawRows);
       if (!mounted || requestId != _requestSequence) return;
 
+      final preferences = await ref
+          .read(runChartPreferencesStoreProvider)
+          .read(
+            entity: widget.entity,
+            project: widget.project,
+            runName: widget.runName,
+          );
+      if (!mounted || requestId != _requestSequence) return;
+
+      final restoredSelection = preferences
+          .selectedKeysFor(ChartPreferenceScope.system)
+          .where(dataset.availableKeys.contains)
+          .toList(growable: false);
       final nextSelected = <String>{
         ..._selectedKeys.where(dataset.availableKeys.contains),
+        ...restoredSelection,
       };
       if (nextSelected.isEmpty) {
         nextSelected.addAll(_defaultSystemKeys(dataset.availableKeys));
@@ -112,11 +133,17 @@ class _SystemMetricsPanelState extends ConsumerState<SystemMetricsPanel> {
       }
 
       final nextSeries = _buildSeries(dataset.rows, nextSelected);
+      final nextRules = <String, MetricChartRule>{
+        for (final entry
+            in preferences.rulesFor(ChartPreferenceScope.system).entries)
+          if (dataset.availableKeys.contains(entry.key)) entry.key: entry.value,
+      };
 
       setState(() {
         _availableKeys = dataset.availableKeys;
         _rows = dataset.rows;
         _series = nextSeries;
+        _rulesByKey = Map.unmodifiable(nextRules);
         _xAxisMode =
             dataset.hasTimestamps ? XAxisMode.relativeTime : XAxisMode.step;
         _selectedKeys
@@ -168,6 +195,7 @@ class _SystemMetricsPanelState extends ConsumerState<SystemMetricsPanel> {
       }
       _series = _buildSeries(_rows, _selectedKeys);
     });
+    unawaited(_persistSelection());
   }
 
   void _setGroupExpanded(String path, bool expanded) {
@@ -299,7 +327,6 @@ class _SystemMetricsPanelState extends ConsumerState<SystemMetricsPanel> {
                         padding: const EdgeInsets.only(bottom: 8),
                       ),
                     ),
-                    _buildSmoothingControl(compact: true),
                   ],
                 ),
               ),
@@ -317,7 +344,7 @@ class _SystemMetricsPanelState extends ConsumerState<SystemMetricsPanel> {
                 children: [
                   FilledButton.tonalIcon(
                     onPressed: _showMetricSelectorSheet,
-                    icon: const Icon(Icons.memory),
+                    icon: const WandbMarkIcon(size: 18, compact: true),
                     label: Text('System (${_selectedKeys.length})'),
                   ),
                   const SizedBox(width: 12),
@@ -333,7 +360,6 @@ class _SystemMetricsPanelState extends ConsumerState<SystemMetricsPanel> {
               ),
             ),
             Expanded(child: _buildChartArea()),
-            if (_series.isNotEmpty) _buildSmoothingControl(),
           ],
         );
       },
@@ -356,53 +382,54 @@ class _SystemMetricsPanelState extends ConsumerState<SystemMetricsPanel> {
     }
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 0, 12, 0),
-      child: WandbLineChart(
+      padding: const EdgeInsets.fromLTRB(4, 0, 12, 8),
+      child: GroupedChartArea(
         series: _series,
-        smoothing: _smoothing,
+        rulesByKey: _rulesByKey,
         xAxisMode: _xAxisMode,
+        collapsedGroups: _collapsedChartGroups,
+        onToggleGroup: (group) {
+          setState(() {
+            if (_collapsedChartGroups.contains(group)) {
+              _collapsedChartGroups.remove(group);
+            } else {
+              _collapsedChartGroups.add(group);
+            }
+          });
+        },
+        onRuleChanged: _updateRule,
       ),
     );
   }
 
-  Widget _buildSmoothingControl({bool compact = false}) {
-    if (_series.isEmpty) return const SizedBox.shrink();
-
-    return Padding(
-      padding: EdgeInsets.fromLTRB(compact ? 8 : 16, 0, compact ? 8 : 16, 8),
-      child: Row(
-        children: [
-          Text(
-            'Smooth',
-            style: TextStyle(
-              fontSize: compact ? 10 : 12,
-              color: Colors.white54,
-            ),
+  void _updateRule(String key, MetricChartRule rule) {
+    setState(() {
+      _rulesByKey = Map.unmodifiable({..._rulesByKey, key: rule});
+    });
+    unawaited(
+      ref
+          .read(runChartPreferencesStoreProvider)
+          .saveRule(
+            entity: widget.entity,
+            project: widget.project,
+            runName: widget.runName,
+            scope: ChartPreferenceScope.system,
+            key: key,
+            rule: rule,
           ),
-          Expanded(
-            child: Slider(
-              value: _smoothing,
-              min: 0,
-              max: 0.99,
-              divisions: 99,
-              label: _smoothing.toStringAsFixed(2),
-              onChanged: (value) => setState(() => _smoothing = value),
-            ),
-          ),
-          if (!compact)
-            SizedBox(
-              width: 40,
-              child: Text(
-                _smoothing.toStringAsFixed(2),
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontFamily: 'JetBrains Mono',
-                ),
-              ),
-            ),
-        ],
-      ),
     );
+  }
+
+  Future<void> _persistSelection() {
+    return ref
+        .read(runChartPreferencesStoreProvider)
+        .saveSelectedKeys(
+          entity: widget.entity,
+          project: widget.project,
+          runName: widget.runName,
+          scope: ChartPreferenceScope.system,
+          keys: _selectedKeys.toList(growable: false),
+        );
   }
 
   List<String> _defaultSystemKeys(List<String> availableKeys) {

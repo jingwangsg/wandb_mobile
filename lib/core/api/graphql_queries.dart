@@ -38,6 +38,7 @@ query GetProjects($entity: String, $cursor: String, $perPage: Int = 50) {
         name
         entityName
         createdAt
+        runCount
         isBenchmark
         description
         user {
