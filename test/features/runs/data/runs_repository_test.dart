@@ -31,6 +31,46 @@ class RecordingGraphqlClient extends GraphqlClient {
 }
 
 void main() {
+  group('RunsRepository.getRuns', () {
+    test('encodes filters as JSONString variables', () async {
+      final client = RecordingGraphqlClient((_, __) async {
+        return {
+          'project': {
+            'runCount': 0,
+            'runs': {
+              'edges': const [],
+              'pageInfo': {'endCursor': null, 'hasNextPage': false},
+            },
+          },
+        };
+      });
+      final repository = RunsRepository(client);
+
+      await repository.getRuns(
+        entity: 'entity',
+        project: 'project',
+        order: '-created_at',
+        filters: {
+          r'$or': [
+            {'state': 'running'},
+            {'group': 'exp-a'},
+          ],
+        },
+      );
+
+      expect(
+        client.lastVariables?['filters'],
+        jsonEncode({
+          r'$or': [
+            {'state': 'running'},
+            {'group': 'exp-a'},
+          ],
+        }),
+      );
+      expect(client.lastVariables?['order'], '-created_at');
+    });
+  });
+
   group('RunsRepository.getSampledHistory', () {
     test(
       'requests one sampled history spec per key and preserves sampled steps',

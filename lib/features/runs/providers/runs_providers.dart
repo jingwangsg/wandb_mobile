@@ -7,6 +7,9 @@ import '../../../core/models/paginated.dart';
 import '../../../core/models/run.dart';
 import '../../auth/providers/auth_providers.dart';
 import '../data/runs_repository.dart';
+import '../models/run_filters.dart';
+
+export '../models/run_filters.dart';
 
 final runsRepositoryProvider = Provider<RunsRepository>((ref) {
   final client = ref.watch(graphqlClientProvider);
@@ -15,57 +18,57 @@ final runsRepositoryProvider = Provider<RunsRepository>((ref) {
 
 // ─── Run Filters & Sort ──────────────────────────────────
 
-class RunFilters {
-  const RunFilters({
-    this.state,
-    this.order = '-created_at',
-    this.searchQuery,
-  });
+class RunFiltersNotifier extends StateNotifier<RunFilters> {
+  RunFiltersNotifier() : super(const RunFilters());
 
-  final String? state; // 'running', 'finished', 'failed', etc.
-  final String order;
-  final String? searchQuery;
-
-  Map<String, dynamic>? toApiFilters() {
-    final conditions = <Map<String, dynamic>>[];
-    if (state != null) {
-      conditions.add({'state': state});
-    }
-    if (searchQuery != null && searchQuery!.isNotEmpty) {
-      conditions.add({
-        'displayName': {r'$regex': searchQuery},
-      });
-    }
-    if (conditions.isEmpty) return null;
-    if (conditions.length == 1) return conditions.first;
-    return {r'$and': conditions};
+  void setOrder(String order) {
+    state = state.copyWith(order: order);
   }
 
-  RunFilters copyWith({
-    String? state,
-    String? order,
-    String? searchQuery,
-    bool clearState = false,
-  }) {
-    return RunFilters(
-      state: clearState ? null : (state ?? this.state),
-      order: order ?? this.order,
-      searchQuery: searchQuery ?? this.searchQuery,
+  void setSearchQuery(String query) {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) {
+      clearSearchQuery();
+      return;
+    }
+    state = state.copyWith(searchQuery: trimmed);
+  }
+
+  void clearSearchQuery() {
+    state = state.copyWith(clearSearchQuery: true);
+  }
+
+  void applyAdvancedFilter(RunFilterGroup root) {
+    if (root.children.isNotEmpty && !root.isValid) return;
+    state = state.copyWith(
+      advancedFilterRoot: root.children.isEmpty ? null : root,
+      clearAdvancedFilter: root.children.isEmpty,
     );
+  }
+
+  void clearAdvancedFilter() {
+    state = state.copyWith(clearAdvancedFilter: true);
+  }
+
+  void clearAll() {
+    state = const RunFilters();
   }
 }
 
 final runFiltersProvider =
-    StateProvider.family<RunFilters, String>((ref, projectPath) {
-  return const RunFilters();
-});
+    StateNotifierProvider.family<RunFiltersNotifier, RunFilters, String>((
+      ref,
+      projectPath,
+    ) {
+      return RunFiltersNotifier();
+    });
 
 // ─── Runs List ───────────────────────────────────────────
 
 class RunsListNotifier
     extends StateNotifier<AsyncValue<PaginatedResult<WandbRun>>> {
   RunsListNotifier(this._repo, this._entity, this._project, this._filters)
-      : super(const AsyncValue.loading()) {
+    : super(const AsyncValue.loading()) {
     load();
   }
 
@@ -111,33 +114,34 @@ class RunsListNotifier
 }
 
 /// Provider key: "entity/project"
-final runsProvider = StateNotifierProvider.family<RunsListNotifier,
-    AsyncValue<PaginatedResult<WandbRun>>, String>(
-  (ref, projectPath) {
-    final parts = projectPath.split('/');
-    final entity = parts[0];
-    final project = parts[1];
-    final repo = ref.watch(runsRepositoryProvider);
-    final filters = ref.watch(runFiltersProvider(projectPath));
-    return RunsListNotifier(repo, entity, project, filters);
-  },
-);
+final runsProvider = StateNotifierProvider.family<
+  RunsListNotifier,
+  AsyncValue<PaginatedResult<WandbRun>>,
+  String
+>((ref, projectPath) {
+  final parts = projectPath.split('/');
+  final entity = parts[0];
+  final project = parts[1];
+  final repo = ref.watch(runsRepositoryProvider);
+  final filters = ref.watch(runFiltersProvider(projectPath));
+  return RunsListNotifier(repo, entity, project, filters);
+});
 
 // ─── Sampled History (for charts) ────────────────────────
 
 /// Key: "entity/project/runName"
-final sampledHistoryProvider = FutureProvider.family<List<MetricSeries>,
-    ({String entity, String project, String runName, List<String> keys})>(
-  (ref, params) async {
-    final repo = ref.watch(runsRepositoryProvider);
-    return repo.getSampledHistory(
-      entity: params.entity,
-      project: params.project,
-      runName: params.runName,
-      keys: params.keys,
-    );
-  },
-);
+final sampledHistoryProvider = FutureProvider.family<
+  List<MetricSeries>,
+  ({String entity, String project, String runName, List<String> keys})
+>((ref, params) async {
+  final repo = ref.watch(runsRepositoryProvider);
+  return repo.getSampledHistory(
+    entity: params.entity,
+    project: params.project,
+    runName: params.runName,
+    keys: params.keys,
+  );
+});
 
 // ─── Auto-polling for running runs ───────────────────────
 
@@ -146,9 +150,9 @@ class RunPollingNotifier extends StateNotifier<AsyncValue<WandbRun>> {
     this._repo,
     this._entity,
     this._project,
-    this._run,
-    {Duration pollInterval = const Duration(seconds: 30)}
-  ) : super(AsyncValue.data(_run)) {
+    this._run, {
+    Duration pollInterval = const Duration(seconds: 30),
+  }) : super(AsyncValue.data(_run)) {
     if (_run.state.isActive) {
       _timer = Timer.periodic(pollInterval, (_) => _poll());
     }

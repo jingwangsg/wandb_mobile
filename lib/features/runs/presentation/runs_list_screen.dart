@@ -40,9 +40,6 @@ class _RunsListScreenState extends ConsumerState<RunsListScreen> {
         final wide = !isCompact(constraints.maxWidth);
 
         final listPanel = _RunsListPanel(
-          entity: widget.entity,
-          project: widget.project,
-          projectPath: _projectPath,
           runsAsync: runsAsync,
           filters: filters,
           selectedRunName: _selectedRun?.name,
@@ -56,32 +53,31 @@ class _RunsListScreenState extends ConsumerState<RunsListScreen> {
               );
             }
           },
-          onShowFilters: () => _showFilters(context, ref),
-          onSortChanged: (order) {
-            ref.read(runFiltersProvider(_projectPath).notifier).state =
-                filters.copyWith(order: order);
-          },
           onSearchChanged: (v) {
-            ref.read(runFiltersProvider(_projectPath).notifier).state =
-                filters.copyWith(searchQuery: v);
+            ref
+                .read(runFiltersProvider(_projectPath).notifier)
+                .setSearchQuery(v);
           },
-          onClearFilter: () {
-            ref.read(runFiltersProvider(_projectPath).notifier).state =
-                filters.copyWith(clearState: true);
+          onClearSearch: () {
+            ref
+                .read(runFiltersProvider(_projectPath).notifier)
+                .clearSearchQuery();
           },
-          onRefresh: () =>
-              ref.read(runsProvider(_projectPath).notifier).refresh(),
-          onLoadMore: () =>
-              ref.read(runsProvider(_projectPath).notifier).loadMore(),
-          onRetry: () =>
-              ref.read(runsProvider(_projectPath).notifier).refresh(),
+          onClearAdvancedFilter: () {
+            ref
+                .read(runFiltersProvider(_projectPath).notifier)
+                .clearAdvancedFilter();
+          },
+          onRefresh:
+              () => ref.read(runsProvider(_projectPath).notifier).refresh(),
+          onLoadMore:
+              () => ref.read(runsProvider(_projectPath).notifier).loadMore(),
+          onRetry:
+              () => ref.read(runsProvider(_projectPath).notifier).refresh(),
         );
 
         if (!wide) {
-          return Scaffold(
-            appBar: _buildAppBar(filters),
-            body: listPanel,
-          );
+          return Scaffold(appBar: _buildAppBar(filters), body: listPanel);
         }
 
         // Wide: master-detail split
@@ -90,35 +86,37 @@ class _RunsListScreenState extends ConsumerState<RunsListScreen> {
           body: Row(
             children: [
               // Master: run list
-              SizedBox(
-                width: constraints.maxWidth * 0.38,
-                child: listPanel,
-              ),
+              SizedBox(width: constraints.maxWidth * 0.38, child: listPanel),
               const VerticalDivider(width: 1, thickness: 1),
               // Detail: selected run
               Expanded(
-                child: _selectedRun != null
-                    ? RunDetailScreen(
-                        key: ValueKey(_selectedRun!.name),
-                        entity: widget.entity,
-                        project: widget.project,
-                        runName: _selectedRun!.name,
-                        run: _selectedRun,
-                        embedded: true,
-                      )
-                    : const Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.touch_app, size: 48, color: Colors.white24),
-                            SizedBox(height: 12),
-                            Text(
-                              'Select a run to view details',
-                              style: TextStyle(color: Colors.white38),
-                            ),
-                          ],
+                child:
+                    _selectedRun != null
+                        ? RunDetailScreen(
+                          key: ValueKey(_selectedRun!.name),
+                          entity: widget.entity,
+                          project: widget.project,
+                          runName: _selectedRun!.name,
+                          run: _selectedRun,
+                          embedded: true,
+                        )
+                        : const Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.touch_app,
+                                size: 48,
+                                color: Colors.white24,
+                              ),
+                              SizedBox(height: 12),
+                              Text(
+                                'Select a run to view details',
+                                style: TextStyle(color: Colors.white38),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
               ),
             ],
           ),
@@ -133,7 +131,8 @@ class _RunsListScreenState extends ConsumerState<RunsListScreen> {
       actions: [
         IconButton(
           icon: Badge(
-            isLabelVisible: filters.state != null,
+            isLabelVisible: filters.hasAdvancedFilters,
+            label: Text(filters.advancedFilterCount.toString()),
             child: const Icon(Icons.filter_list),
           ),
           onPressed: () => _showFilters(context, ref),
@@ -141,15 +140,23 @@ class _RunsListScreenState extends ConsumerState<RunsListScreen> {
         PopupMenuButton<String>(
           icon: const Icon(Icons.sort),
           onSelected: (order) {
-            ref.read(runFiltersProvider(_projectPath).notifier).state =
-                filters.copyWith(order: order);
+            ref.read(runFiltersProvider(_projectPath).notifier).setOrder(order);
           },
-          itemBuilder: (_) => const [
-            PopupMenuItem(value: '-created_at', child: Text('Newest first')),
-            PopupMenuItem(value: '+created_at', child: Text('Oldest first')),
-            PopupMenuItem(
-                value: '-heartbeat_at', child: Text('Recently active')),
-          ],
+          itemBuilder:
+              (_) => const [
+                PopupMenuItem(
+                  value: '-created_at',
+                  child: Text('Newest first'),
+                ),
+                PopupMenuItem(
+                  value: '+created_at',
+                  child: Text('Oldest first'),
+                ),
+                PopupMenuItem(
+                  value: '-heartbeat_at',
+                  child: Text('Recently active'),
+                ),
+              ],
         ),
       ],
     );
@@ -158,6 +165,8 @@ class _RunsListScreenState extends ConsumerState<RunsListScreen> {
   void _showFilters(BuildContext context, WidgetRef ref) {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
       builder: (_) => RunFilterSheet(projectPath: _projectPath),
     );
   }
@@ -166,33 +175,25 @@ class _RunsListScreenState extends ConsumerState<RunsListScreen> {
 /// Extracted list panel — used in both narrow (full screen) and wide (left panel).
 class _RunsListPanel extends StatelessWidget {
   const _RunsListPanel({
-    required this.entity,
-    required this.project,
-    required this.projectPath,
     required this.runsAsync,
     required this.filters,
     required this.onRunTap,
-    required this.onShowFilters,
-    required this.onSortChanged,
     required this.onSearchChanged,
-    required this.onClearFilter,
+    required this.onClearSearch,
+    required this.onClearAdvancedFilter,
     required this.onRefresh,
     required this.onLoadMore,
     required this.onRetry,
     this.selectedRunName,
   });
 
-  final String entity;
-  final String project;
-  final String projectPath;
   final AsyncValue<dynamic> runsAsync;
   final RunFilters filters;
   final String? selectedRunName;
   final void Function(WandbRun) onRunTap;
-  final VoidCallback onShowFilters;
-  final void Function(String) onSortChanged;
   final void Function(String) onSearchChanged;
-  final VoidCallback onClearFilter;
+  final VoidCallback onClearSearch;
+  final VoidCallback onClearAdvancedFilter;
   final Future<void> Function() onRefresh;
   final VoidCallback onLoadMore;
   final VoidCallback onRetry;
@@ -204,27 +205,36 @@ class _RunsListPanel extends StatelessWidget {
         // Search
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: TextField(
+          child: _RunSearchField(
+            value: filters.searchQuery ?? '',
             onChanged: onSearchChanged,
-            decoration: const InputDecoration(
-              hintText: 'Search runs...',
-              prefixIcon: Icon(Icons.search),
-              isDense: true,
-            ),
           ),
         ),
 
         // Active filter chips
-        if (filters.state != null)
+        if (filters.hasSearchQuery || filters.hasAdvancedFilters)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Row(
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
               children: [
-                Chip(
-                  label: Text(filters.state!),
-                  onDeleted: onClearFilter,
-                  deleteIcon: const Icon(Icons.close, size: 16),
-                ),
+                if (filters.hasSearchQuery)
+                  Chip(
+                    label: Text('Search: ${filters.normalizedSearchQuery}'),
+                    onDeleted: onClearSearch,
+                    deleteIcon: const Icon(Icons.close, size: 16),
+                  ),
+                if (filters.hasAdvancedFilters)
+                  Chip(
+                    label: Text(
+                      filters.advancedFilterCount == 1
+                          ? '1 filter'
+                          : '${filters.advancedFilterCount} filters',
+                    ),
+                    onDeleted: onClearAdvancedFilter,
+                    deleteIcon: const Icon(Icons.close, size: 16),
+                  ),
               ],
             ),
           ),
@@ -233,16 +243,20 @@ class _RunsListPanel extends StatelessWidget {
         Expanded(
           child: runsAsync.when(
             loading: () => const Center(child: CircularProgressIndicator()),
-            error: (e, _) => Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text('Error: $e'),
-                  const SizedBox(height: 8),
-                  FilledButton(onPressed: onRetry, child: const Text('Retry')),
-                ],
-              ),
-            ),
+            error:
+                (e, _) => Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('Error: $e'),
+                      const SizedBox(height: 8),
+                      FilledButton(
+                        onPressed: onRetry,
+                        child: const Text('Retry'),
+                      ),
+                    ],
+                  ),
+                ),
             data: (result) {
               if (result.items.isEmpty) {
                 return const Center(child: Text('No runs found'));
@@ -252,8 +266,7 @@ class _RunsListPanel extends StatelessWidget {
                 onRefresh: onRefresh,
                 child: ListView.builder(
                   padding: const EdgeInsets.symmetric(horizontal: 8),
-                  itemCount:
-                      result.items.length + (result.hasNextPage ? 1 : 0),
+                  itemCount: result.items.length + (result.hasNextPage ? 1 : 0),
                   itemBuilder: (context, index) {
                     if (index == result.items.length) {
                       onLoadMore();
@@ -283,6 +296,55 @@ class _RunsListPanel extends StatelessWidget {
   }
 }
 
+class _RunSearchField extends StatefulWidget {
+  const _RunSearchField({required this.value, required this.onChanged});
+
+  final String value;
+  final ValueChanged<String> onChanged;
+
+  @override
+  State<_RunSearchField> createState() => _RunSearchFieldState();
+}
+
+class _RunSearchFieldState extends State<_RunSearchField> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.value);
+  }
+
+  @override
+  void didUpdateWidget(covariant _RunSearchField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.value == _controller.text) return;
+    _controller.value = TextEditingValue(
+      text: widget.value,
+      selection: TextSelection.collapsed(offset: widget.value.length),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: _controller,
+      onChanged: widget.onChanged,
+      decoration: const InputDecoration(
+        hintText: 'Search runs...',
+        prefixIcon: Icon(Icons.search),
+        isDense: true,
+      ),
+    );
+  }
+}
+
 class _RunTile extends StatelessWidget {
   const _RunTile({required this.run, this.onTap, this.selected = false});
 
@@ -296,9 +358,10 @@ class _RunTile extends StatelessWidget {
 
     return Card(
       margin: const EdgeInsets.only(bottom: 4),
-      color: selected
-          ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.12)
-          : null,
+      color:
+          selected
+              ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.12)
+              : null,
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
@@ -336,7 +399,9 @@ class _RunTile extends StatelessWidget {
                       children: [
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 5, vertical: 1),
+                            horizontal: 5,
+                            vertical: 1,
+                          ),
                           decoration: BoxDecoration(
                             color: stateColor.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(4),
@@ -356,7 +421,9 @@ class _RunTile extends StatelessWidget {
                             child: Text(
                               run.tags.take(2).join(', '),
                               style: const TextStyle(
-                                  fontSize: 10, color: Colors.white38),
+                                fontSize: 10,
+                                color: Colors.white38,
+                              ),
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
@@ -381,14 +448,15 @@ class _RunTile extends StatelessWidget {
                 children: [
                   Text(
                     formatRelativeTime(run.createdAt),
-                    style:
-                        const TextStyle(fontSize: 11, color: Colors.white38),
+                    style: const TextStyle(fontSize: 11, color: Colors.white38),
                   ),
                   if (run.duration != null)
                     Text(
                       formatDuration(run.duration!),
-                      style:
-                          const TextStyle(fontSize: 10, color: Colors.white24),
+                      style: const TextStyle(
+                        fontSize: 10,
+                        color: Colors.white24,
+                      ),
                     ),
                 ],
               ),
