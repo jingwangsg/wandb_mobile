@@ -9,6 +9,8 @@ import '../../../core/widgets/wandb_mark_icon.dart';
 import '../../auth/providers/auth_providers.dart';
 import '../providers/projects_providers.dart';
 
+const _kProjectGridItemExtent = 116.0;
+
 class ProjectsScreen extends ConsumerStatefulWidget {
   const ProjectsScreen({super.key});
 
@@ -128,7 +130,7 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
                                       crossAxisCount: cols,
                                       mainAxisSpacing: 8,
                                       crossAxisSpacing: 8,
-                                      childAspectRatio: 2.5,
+                                      mainAxisExtent: _kProjectGridItemExtent,
                                     ),
                                 itemCount:
                                     filtered.length +
@@ -142,7 +144,10 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
                                       child: CircularProgressIndicator(),
                                     );
                                   }
-                                  return _ProjectTile(project: filtered[index]);
+                                  return _ProjectTile(
+                                    project: filtered[index],
+                                    inGrid: true,
+                                  );
                                 },
                               ),
                     );
@@ -193,50 +198,89 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
 }
 
 class _ProjectTile extends StatelessWidget {
-  const _ProjectTile({required this.project});
+  const _ProjectTile({required this.project, this.inGrid = false});
   final WandbProject project;
+  final bool inGrid;
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final description = project.description;
+    final hasDescription = description != null && description.isNotEmpty;
+
     return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        leading: const WandbMarkIcon(size: 28),
-        title: Text(
-          project.name,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontWeight: FontWeight.w600),
-        ),
-        subtitle:
-            project.description != null && project.description!.isNotEmpty
-                ? Text(
-                  project.description!,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Colors.white54),
-                )
-                : null,
-        trailing: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Text(
-              _formatRunCount(project.runCount),
-              style: Theme.of(context).textTheme.labelSmall,
-            ),
-            if (project.createdAt != null)
-              Text(
-                formatRelativeTime(project.createdAt),
-                style: Theme.of(context).textTheme.labelSmall,
-              ),
-            const Icon(Icons.chevron_right, color: Colors.white38),
-          ],
-        ),
+      margin: EdgeInsets.only(bottom: inGrid ? 0 : 8),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
         onTap: () {
           context.push('/projects/${project.entityName}/${project.name}');
         },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Padding(
+                      padding: EdgeInsets.only(top: 2),
+                      child: WandbMarkIcon(size: 28),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            project.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          if (hasDescription) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              description!,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurface.withValues(
+                                  alpha: 0.72,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    _formatRunCount(project.runCount),
+                    textAlign: TextAlign.right,
+                    style: theme.textTheme.labelSmall,
+                  ),
+                  if (project.createdAt != null)
+                    Text(
+                      formatRelativeTime(project.createdAt),
+                      textAlign: TextAlign.right,
+                      style: theme.textTheme.labelSmall,
+                    ),
+                  const SizedBox(height: 4),
+                  const Icon(Icons.chevron_right, color: Colors.white38),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
