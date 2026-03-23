@@ -16,12 +16,16 @@ import 'package:wandb_mobile/features/runs/providers/runs_providers.dart';
 import '../../../../test_support/in_memory_run_chart_preferences_store.dart';
 
 class RecordingRunsRepository extends RunsRepository {
-  RecordingRunsRepository({this.error, this.pointCount = 2})
-    : super(GraphqlClient(apiKey: 'test'));
+  RecordingRunsRepository({
+    this.error,
+    this.pointCount = 2,
+    this.pointCountsByKey = const {},
+  }) : super(GraphqlClient(apiKey: 'test'));
 
   List<String>? requestedKeys;
   final Object? error;
   final int pointCount;
+  final Map<String, int> pointCountsByKey;
 
   @override
   Future<List<MetricSeries>> getSampledHistory({
@@ -33,20 +37,17 @@ class RecordingRunsRepository extends RunsRepository {
   }) async {
     requestedKeys = [...keys];
     if (error != null) throw error!;
-    return keys
-        .map(
-          (key) => MetricSeries(
-            key: key,
-            points: List.generate(
-              pointCount,
-              (index) => MetricPoint(
-                step: index + 1,
-                value: (index % 37).toDouble() / 37,
-              ),
-            ),
-          ),
-        )
-        .toList();
+    return keys.map((key) {
+      final count = pointCountsByKey[key] ?? pointCount;
+      return MetricSeries(
+        key: key,
+        points: List.generate(
+          count,
+          (index) =>
+              MetricPoint(step: index + 1, value: (index % 37).toDouble() / 37),
+        ),
+      );
+    }).toList();
   }
 }
 
@@ -111,6 +112,27 @@ const _singleMetricRun = WandbRun(
       'train/loss': {
         'typeCounts': [
           {'type': 'number', 'count': 50},
+        ],
+      },
+    },
+  },
+);
+
+const _mixedCadenceRun = WandbRun(
+  id: 'mixed-run-id',
+  name: 'mixed-cadence-run',
+  displayName: 'mixed',
+  state: RunState.finished,
+  historyKeys: {
+    'keys': {
+      'train/train/loss': {
+        'typeCounts': [
+          {'type': 'number', 'count': 50},
+        ],
+      },
+      'timing/model_forward_avg_ms': {
+        'typeCounts': [
+          {'type': 'number', 'count': 8},
         ],
       },
     },
@@ -365,4 +387,62 @@ void main() {
     expect(chart.yAxisMin, 0.1);
     expect(chart.yAxisMax, 0.9);
   });
+
+  testWidgets(
+    'keeps mixed-cadence selections visible when one selected series has no points',
+    (tester) async {
+      final repository = RecordingRunsRepository(
+        pointCount: 0,
+        pointCountsByKey: const {
+          'train/train/loss': 24,
+          'timing/model_forward_avg_ms': 0,
+        },
+      );
+      final preferenceStore = InMemoryRunChartPreferencesStore();
+      await preferenceStore.saveSelectedKeys(
+        entity: 'nv-gear',
+        project: 'n1d6_ttt_fm_assembly',
+        runName: _mixedCadenceRun.name,
+        scope: ChartPreferenceScope.metrics,
+        keys: const ['train/train/loss', 'timing/model_forward_avg_ms'],
+      );
+
+      await tester.pumpWidget(
+        _buildMetricsPanel(
+          repository: repository,
+          run: _mixedCadenceRun,
+          width: 700,
+          preferenceStore: preferenceStore,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Select metrics to chart'), findsNothing);
+      expect(
+        find.byKey(const Key('metric-chart-card-train/train/loss')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('metric-chart-card-timing/model_forward_avg_ms')),
+        findsOneWidget,
+      );
+      expect(find.text('No data'), findsOneWidget);
+
+      final metricsSuccess = RuntimeDiagnostics.instance.entries.value
+          .where((entry) => entry.category == 'metrics_request_succeeded')
+          .toList(growable: false);
+      expect(metricsSuccess, isNotEmpty);
+      expect(metricsSuccess.last.data?['emptyKeys'], [
+        'timing/model_forward_avg_ms',
+      ]);
+      expect(
+        metricsSuccess.last.data?['pointCounts'],
+        containsPair('train/train/loss', 24),
+      );
+      expect(
+        metricsSuccess.last.data?['pointCounts'],
+        containsPair('timing/model_forward_avg_ms', 0),
+      );
+    },
+  );
 }

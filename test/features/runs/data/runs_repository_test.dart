@@ -32,62 +32,132 @@ class RecordingGraphqlClient extends GraphqlClient {
 
 void main() {
   group('RunsRepository.getSampledHistory', () {
-    test('requests chart axis keys and preserves sampled steps', () async {
-      final client = RecordingGraphqlClient((_, variables) {
-        final spec =
-            jsonDecode(variables!['spec'] as String) as Map<String, dynamic>;
-        final keys = (spec['keys'] as List).cast<String>();
-        final includeStep = keys.contains('_step');
-        final includeTimestamp = keys.contains('_timestamp');
+    test(
+      'requests one sampled history spec per key and preserves sampled steps',
+      () async {
+        final client = RecordingGraphqlClient((_, variables) {
+          final specs = (variables!['specs'] as List<dynamic>)
+              .cast<String>()
+              .map((spec) => jsonDecode(spec) as Map<String, dynamic>)
+              .toList(growable: false);
+          final rows = specs
+              .map((spec) {
+                final keys = (spec['keys'] as List).cast<String>();
+                final includeStep = keys.contains('_step');
+                final includeTimestamp = keys.contains('_timestamp');
+                final key = keys.last;
+                return [
+                  {
+                    if (includeStep) '_step': 10,
+                    if (includeTimestamp) '_timestamp': 1700000000,
+                    key: 0.5,
+                  },
+                  {
+                    if (includeStep) '_step': 20,
+                    if (includeTimestamp) '_timestamp': 1700003600,
+                    key: 0.25,
+                  },
+                ];
+              })
+              .toList(growable: false);
 
-        final rows = [
-          {
-            if (includeStep) '_step': 10,
-            if (includeTimestamp) '_timestamp': 1700000000,
-            'loss': 0.5,
-          },
-          {
-            if (includeStep) '_step': 20,
-            if (includeTimestamp) '_timestamp': 1700003600,
-            'loss': 0.25,
-          },
-        ];
-
-        return {
-          'project': {
-            'run': {
-              'sampledHistory': [rows],
+          return {
+            'project': {
+              'run': {'sampledHistory': rows},
             },
+          };
+        });
+        final repository = RunsRepository(client);
+
+        final series = await repository.getSampledHistory(
+          entity: 'entity',
+          project: 'project',
+          runName: 'run',
+          keys: ['loss'],
+          samples: 2,
+        );
+
+        final specs = (client.lastVariables!['specs'] as List<dynamic>)
+            .cast<String>()
+            .map((spec) => jsonDecode(spec) as Map<String, dynamic>)
+            .toList(growable: false);
+        expect(specs, [
+          {
+            'keys': ['_step', '_timestamp', 'loss'],
+            'samples': 2,
           },
-        };
-      });
-      final repository = RunsRepository(client);
+        ]);
+        expect(series, [
+          isA<MetricSeries>()
+              .having((value) => value.key, 'key', 'loss')
+              .having((value) => value.points.length, 'point count', 2)
+              .having((value) => value.points[0].step, 'first step', 10)
+              .having((value) => value.points[1].step, 'second step', 20)
+              .having(
+                (value) => value.points[0].timestamp,
+                'first timestamp',
+                DateTime.fromMillisecondsSinceEpoch(1700000000 * 1000),
+              ),
+        ]);
+      },
+    );
 
-      final series = await repository.getSampledHistory(
-        entity: 'entity',
-        project: 'project',
-        runName: 'run',
-        keys: ['loss'],
-        samples: 2,
-      );
+    test(
+      'keeps mixed-cadence keys isolated so one empty spec does not drop others',
+      () async {
+        final client = RecordingGraphqlClient((_, variables) async {
+          final specs = (variables!['specs'] as List<dynamic>)
+              .cast<String>()
+              .map((spec) => jsonDecode(spec) as Map<String, dynamic>)
+              .toList(growable: false);
 
-      final spec =
-          jsonDecode(client.lastVariables!['spec'] as String)
-              as Map<String, dynamic>;
-      expect(spec['keys'], ['_step', '_timestamp', 'loss']);
-      expect(series, [
-        isA<MetricSeries>()
-            .having((value) => value.key, 'key', 'loss')
-            .having((value) => value.points.length, 'point count', 2)
-            .having((value) => value.points[0].step, 'first step', 10)
-            .having((value) => value.points[1].step, 'second step', 20)
-            .having(
-              (value) => value.points[0].timestamp,
-              'first timestamp',
-              DateTime.fromMillisecondsSinceEpoch(1700000000 * 1000),
-            ),
-      ]);
-    });
+          expect(specs, [
+            {
+              'keys': ['_step', '_timestamp', 'train/train/loss'],
+              'samples': 5,
+            },
+            {
+              'keys': ['_step', '_timestamp', 'timing/model_forward_avg_ms'],
+              'samples': 5,
+            },
+          ]);
+
+          return {
+            'project': {
+              'run': {
+                'sampledHistory': [
+                  [
+                    {
+                      '_step': 101,
+                      '_timestamp': 1700000000,
+                      'train/train/loss': 0.125,
+                    },
+                  ],
+                  const [],
+                ],
+              },
+            },
+          };
+        });
+        final repository = RunsRepository(client);
+
+        final series = await repository.getSampledHistory(
+          entity: 'entity',
+          project: 'project',
+          runName: 'run',
+          keys: const ['train/train/loss', 'timing/model_forward_avg_ms'],
+          samples: 5,
+        );
+
+        expect(series, hasLength(2));
+        expect(series[0].key, 'train/train/loss');
+        expect(series[0].points, hasLength(1));
+        expect(series[0].points.first.step, 101);
+        expect(series[0].points.first.value, 0.125);
+        expect(series[1].key, 'timing/model_forward_avg_ms');
+        expect(series[1].points, isEmpty);
+      },
+    );
   });
 
   group('RunsRepository.getSystemMetrics', () {

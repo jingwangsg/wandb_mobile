@@ -182,6 +182,10 @@ class _MetricsChartPanelState extends ConsumerState<MetricsChartPanel> {
             for (final metricSeries in series)
               metricSeries.key: metricSeries.points.length,
           },
+          'emptyKeys': [
+            for (final metricSeries in series)
+              if (metricSeries.points.isEmpty) metricSeries.key,
+          ],
         },
       );
     } catch (e, st) {
@@ -356,8 +360,8 @@ class _MetricsChartPanelState extends ConsumerState<MetricsChartPanel> {
                   child: Row(
                     children: [
                       IconButton(
-                        onPressed: () =>
-                            setState(() => _selectorVisible = true),
+                        onPressed:
+                            () => setState(() => _selectorVisible = true),
                         icon: const Icon(Icons.menu, size: 20),
                         tooltip: 'Show selector',
                       ),
@@ -391,8 +395,7 @@ class _MetricsChartPanelState extends ConsumerState<MetricsChartPanel> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Padding(
-                              padding:
-                                  const EdgeInsets.fromLTRB(16, 12, 8, 8),
+                              padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
                               child: Row(
                                 children: [
                                   const Expanded(
@@ -413,10 +416,14 @@ class _MetricsChartPanelState extends ConsumerState<MetricsChartPanel> {
                                     ),
                                   ),
                                   IconButton(
-                                    onPressed: () => setState(
-                                        () => _selectorVisible = false),
+                                    onPressed:
+                                        () => setState(
+                                          () => _selectorVisible = false,
+                                        ),
                                     icon: const Icon(
-                                        Icons.chevron_left, size: 20),
+                                      Icons.chevron_left,
+                                      size: 20,
+                                    ),
                                     tooltip: 'Hide selector',
                                     visualDensity: VisualDensity.compact,
                                   ),

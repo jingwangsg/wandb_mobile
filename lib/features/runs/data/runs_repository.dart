@@ -59,35 +59,41 @@ class RunsRepository {
     required List<String> keys,
     int samples = 500,
   }) async {
-    final requestedKeys = <String>[
-      ..._chartAxisKeys,
-      ...keys.where((key) => !_chartAxisKeys.contains(key)),
-    ];
-    final spec = jsonEncode({'keys': requestedKeys, 'samples': samples});
+    final requestedKeys = keys
+        .where((key) => !_chartAxisKeys.contains(key))
+        .toList(growable: false);
+    if (requestedKeys.isEmpty) return [];
+
+    final specs = requestedKeys
+        .map(
+          (key) => jsonEncode({
+            'keys': [..._chartAxisKeys, key],
+            'samples': samples,
+          }),
+        )
+        .toList(growable: false);
     final data = await _client.query(
       WandbQueries.getSampledHistory,
       variables: {
         'entity': entity,
         'project': project,
         'run': runName,
-        'spec': spec,
+        'specs': specs,
       },
     );
 
     final run = (data['project'] as Map)['run'] as Map<String, dynamic>;
     final historyArrays = run['sampledHistory'] as List;
 
-    if (historyArrays.isEmpty) return [];
-
-    // sampledHistory returns [[{_step, key1, key2, ...}, ...]]
-    final rows = historyArrays.first as List;
-
-    // Build MetricSeries for each requested key
-    return keys.map((key) {
+    return requestedKeys.asMap().entries.map((entry) {
+      final key = entry.value;
+      final rows =
+          entry.key < historyArrays.length && historyArrays[entry.key] is List
+              ? historyArrays[entry.key] as List
+              : const [];
       final points = <MetricPoint>[];
       for (var index = 0; index < rows.length; index++) {
-        final row = rows[index];
-        final map = row as Map<String, dynamic>;
+        final map = _sampledHistoryRowAsMap(rows[index]);
         final value = map[key];
         if (value is! num) continue;
 
@@ -229,5 +235,20 @@ class RunsRepository {
     // Use Dio from the client to download
     // For simplicity, return the URL — the UI layer will handle download
     return url;
+  }
+
+  static Map<String, dynamic> _sampledHistoryRowAsMap(dynamic row) {
+    if (row is Map<String, dynamic>) return row;
+    if (row is Map) {
+      return row.map((key, value) => MapEntry(key.toString(), value));
+    }
+    if (row is String) {
+      final decoded = jsonDecode(row);
+      if (decoded is Map<String, dynamic>) return decoded;
+      if (decoded is Map) {
+        return decoded.map((key, value) => MapEntry(key.toString(), value));
+      }
+    }
+    return const {};
   }
 }

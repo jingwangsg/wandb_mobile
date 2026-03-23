@@ -114,14 +114,14 @@ query Runs($project: String!, $entity: String!, $cursor: String,
 ''';
 
   // ─── Run History (Sampled — for charts) ────────────────
-  /// $spec format: {"keys": ["loss", "accuracy"], "samples": 500}
-  /// Returns array of arrays, each element is {"_step": N, "loss": 0.5, ...}
+  /// Each $spec follows {"keys": ["loss", "accuracy"], "samples": 500}.
+  /// Returns one sampled history array per spec.
   static const getSampledHistory = r'''
 query SampledHistoryPage($entity: String!, $project: String!,
-                          $run: String!, $spec: JSONString!) {
+                          $run: String!, $specs: [JSONString!]!) {
   project(name: $project, entityName: $entity) {
     run(name: $run) {
-      sampledHistory(specs: [$spec])
+      sampledHistory(specs: $specs)
     }
   }
 }
