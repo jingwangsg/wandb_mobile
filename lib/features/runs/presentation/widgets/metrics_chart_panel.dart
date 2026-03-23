@@ -72,6 +72,7 @@ class _MetricsChartPanelState extends ConsumerState<MetricsChartPanel> {
   final Set<String> _selectedKeys = {};
   final Set<String> _expandedGroupPaths = {};
   final Set<String> _collapsedChartGroups = {};
+  bool _selectorVisible = true;
 
   Map<String, MetricChartRule> _rulesByKey = const {};
   bool _loaded = false;
@@ -347,53 +348,101 @@ class _MetricsChartPanelState extends ConsumerState<MetricsChartPanel> {
     return LayoutBuilder(
       builder: (context, constraints) {
         if (constraints.maxWidth >= 500) {
-          return Row(
+          return Column(
             children: [
-              SizedBox(
-                width: 240,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+              if (!_selectorVisible)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        onPressed: () =>
+                            setState(() => _selectorVisible = true),
+                        icon: const Icon(Icons.menu, size: 20),
+                        tooltip: 'Show selector',
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Metrics (${_selectedKeys.length})',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white70,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          _selectionSummary,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: Colors.white54),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              Expanded(
+                child: Row(
                   children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                      child: Row(
-                        children: [
-                          const Expanded(
-                            child: Text(
-                              'Metrics',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.white54,
+                    if (_selectorVisible) ...[
+                      SizedBox(
+                        width: 240,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Padding(
+                              padding:
+                                  const EdgeInsets.fromLTRB(16, 12, 8, 8),
+                              child: Row(
+                                children: [
+                                  const Expanded(
+                                    child: Text(
+                                      'Metrics',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.white54,
+                                      ),
+                                    ),
+                                  ),
+                                  Text(
+                                    '${_selectedKeys.length}',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.white38,
+                                    ),
+                                  ),
+                                  IconButton(
+                                    onPressed: () => setState(
+                                        () => _selectorVisible = false),
+                                    icon: const Icon(
+                                        Icons.chevron_left, size: 20),
+                                    tooltip: 'Hide selector',
+                                    visualDensity: VisualDensity.compact,
+                                  ),
+                                ],
                               ),
                             ),
-                          ),
-                          Text(
-                            '${_selectedKeys.length} selected',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Colors.white38,
+                            Expanded(
+                              child: GroupedMetricSelector(
+                                metricKeys: availableKeys,
+                                selectedKeys: _selectedKeys,
+                                expandedGroupPaths: _expandedGroupPaths,
+                                onToggleMetric: _toggleMetricSelection,
+                                onToggleGroup: _setGroupExpanded,
+                                compact: true,
+                                padding: const EdgeInsets.only(bottom: 8),
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
-                    Expanded(
-                      child: GroupedMetricSelector(
-                        metricKeys: availableKeys,
-                        selectedKeys: _selectedKeys,
-                        expandedGroupPaths: _expandedGroupPaths,
-                        onToggleMetric: _toggleMetricSelection,
-                        onToggleGroup: _setGroupExpanded,
-                        compact: true,
-                        padding: const EdgeInsets.only(bottom: 8),
-                      ),
-                    ),
+                      const VerticalDivider(width: 1, thickness: 1),
+                    ],
+                    Expanded(child: _buildChartArea()),
                   ],
                 ),
               ),
-              const VerticalDivider(width: 1, thickness: 1),
-              Expanded(child: _buildChartArea()),
             ],
           );
         }
