@@ -205,6 +205,8 @@ class _ProjectTile extends StatelessWidget {
         leading: const WandbMarkIcon(size: 28),
         title: Text(
           project.name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: const TextStyle(fontWeight: FontWeight.w600),
         ),
         subtitle:
