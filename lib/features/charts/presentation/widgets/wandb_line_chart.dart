@@ -161,7 +161,7 @@ class WandbLineChart extends StatelessWidget {
       case XAxisMode.step:
         return point.step;
       case XAxisMode.relativeTime:
-        return point.timestamp?.millisecondsSinceEpoch ?? point.step;
+        return point.step;
       case XAxisMode.wallClock:
         return point.timestamp?.millisecondsSinceEpoch ?? point.step;
     }

@@ -1,68 +1,53 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/diagnostics/diagnostic_format.dart';
 import '../../../../core/diagnostics/runtime_diagnostics.dart';
 import '../../../../core/models/metric_point.dart';
-import '../../../../core/models/run.dart';
 import '../../../charts/presentation/widgets/wandb_line_chart.dart';
 import '../../providers/runs_providers.dart';
 import 'grouped_metric_selector.dart';
 
-const _defaultMetricSelectionLimit = 3;
-const _defaultMetricPrefixes = ['train/', 'val/', 'valid/', 'eval/', 'test/'];
-const _deprioritizedMetricPrefixes = ['system/', 'slowest_rank/', 'straggler/'];
-const _headlineMetricTokens = [
-  'loss',
-  'accuracy',
-  'acc',
-  'error',
-  'precision',
-  'recall',
-  'f1',
-  'auc',
-  'iou',
-  'bleu',
-  'perplexity',
-  'reward',
-];
-const _supportingMetricTokens = ['grad_norm', 'norm'];
-const _deprioritizedMetricTokens = [
-  'epoch',
-  'step',
-  'learning_rate',
-  'lr',
-  'runtime',
-  'time',
-  'tokens',
-  'batch',
-  'pixel_elements',
-  'memory',
-  'cpu',
+const _defaultSystemSelectionLimit = 3;
+const _systemPreferredTokens = [
   'gpu',
-  'rank',
+  'cpu',
+  'memory',
+  'util',
+  'temperature',
+  'temp',
+  'power',
+  'disk',
+  'network',
+];
+const _systemDeprioritizedTokens = [
+  'error',
+  'errors',
+  'pid',
+  'process',
+  'correctedmemoryerrors',
+  'uncorrectedmemoryerrors',
 ];
 
-/// Panel that loads and displays metric charts for a run.
-class MetricsChartPanel extends ConsumerStatefulWidget {
-  const MetricsChartPanel({
+class SystemMetricsPanel extends ConsumerStatefulWidget {
+  const SystemMetricsPanel({
     super.key,
     required this.entity,
     required this.project,
     required this.runName,
-    required this.run,
   });
 
   final String entity;
   final String project;
   final String runName;
-  final WandbRun run;
 
   @override
-  ConsumerState<MetricsChartPanel> createState() => _MetricsChartPanelState();
+  ConsumerState<SystemMetricsPanel> createState() => _SystemMetricsPanelState();
 }
 
-class _MetricsChartPanelState extends ConsumerState<MetricsChartPanel> {
+class _SystemMetricsPanelState extends ConsumerState<SystemMetricsPanel> {
   final Set<String> _selectedKeys = {};
   final Set<String> _expandedGroupPaths = {};
 
@@ -71,75 +56,24 @@ class _MetricsChartPanelState extends ConsumerState<MetricsChartPanel> {
   bool _loading = false;
   String? _error;
   int _requestSequence = 0;
-  List<MetricSeries> _series = [];
+  List<String> _availableKeys = const [];
+  List<_SystemMetricRow> _rows = const [];
+  List<MetricSeries> _series = const [];
+  XAxisMode _xAxisMode = XAxisMode.step;
   Map<String, Object?>? _lastRequestDetails;
-
-  List<String> get _availableKeys {
-    final keys = <String>{};
-
-    final historyKeys = widget.run.historyKeys?['keys'];
-    if (historyKeys is Map) {
-      keys.addAll(historyKeys.keys.cast<String>());
-    }
-
-    if (keys.isEmpty) {
-      keys.addAll(widget.run.summaryMetrics.keys);
-    }
-
-    return keys.where((key) => !key.startsWith('_')).toList()..sort();
-  }
-
-  List<String> get _defaultMetricKeys {
-    final historyKeyMetadata = widget.run.historyKeys?['keys'];
-    final historyKeyMap =
-        historyKeyMetadata is Map
-            ? historyKeyMetadata.cast<String, dynamic>()
-            : const <String, dynamic>{};
-    final rankedKeys = [..._availableKeys];
-    rankedKeys.sort((a, b) {
-      final scoreComparison = _metricPriorityScore(
-        b,
-        historyKeyMap,
-      ).compareTo(_metricPriorityScore(a, historyKeyMap));
-      if (scoreComparison != 0) return scoreComparison;
-      return a.compareTo(b);
-    });
-    return rankedKeys.take(_defaultMetricSelectionLimit).toList();
-  }
 
   @override
   void initState() {
     super.initState();
-    final defaultKeys = _defaultMetricKeys;
-    if (defaultKeys.isNotEmpty) {
-      _selectedKeys.addAll(defaultKeys);
-      for (final key in defaultKeys) {
-        _expandedGroupPaths.addAll(metricGroupPathsForKey(key));
-      }
-      _loadMetrics();
-    }
+    _loadSystemMetrics();
   }
 
-  Future<void> _loadMetrics() async {
-    final selectedKeys = _selectedKeys.toList();
+  Future<void> _loadSystemMetrics() async {
     final requestId = ++_requestSequence;
-
-    if (selectedKeys.isEmpty) {
-      if (!mounted) return;
-      setState(() {
-        _series = const [];
-        _loaded = false;
-        _loading = false;
-        _error = null;
-      });
-      return;
-    }
-
     final requestDetails = <String, Object?>{
       'entity': widget.entity,
       'project': widget.project,
       'runName': widget.runName,
-      'keys': [...selectedKeys]..sort(),
       'samples': 500,
     };
 
@@ -150,42 +84,68 @@ class _MetricsChartPanelState extends ConsumerState<MetricsChartPanel> {
     });
 
     RuntimeDiagnostics.instance.record(
-      'metrics_request',
-      'Loading sampled history for Metrics tab',
+      'system_metrics_request',
+      'Loading system metrics for Run detail',
       data: requestDetails,
     );
 
     try {
       final repo = ref.read(runsRepositoryProvider);
-      final series = await repo.getSampledHistory(
+      final rawRows = await repo.getSystemMetrics(
         entity: widget.entity,
         project: widget.project,
         runName: widget.runName,
-        keys: selectedKeys,
       );
+      final dataset = _SystemMetricsDataset.fromRows(rawRows);
       if (!mounted || requestId != _requestSequence) return;
 
+      final nextSelected = <String>{
+        ..._selectedKeys.where(dataset.availableKeys.contains),
+      };
+      if (nextSelected.isEmpty) {
+        nextSelected.addAll(_defaultSystemKeys(dataset.availableKeys));
+      }
+
+      final nextExpanded = <String>{..._expandedGroupPaths};
+      for (final key in nextSelected) {
+        nextExpanded.addAll(metricGroupPathsForKey(key));
+      }
+
+      final nextSeries = _buildSeries(dataset.rows, nextSelected);
+
       setState(() {
-        _series = series;
+        _availableKeys = dataset.availableKeys;
+        _rows = dataset.rows;
+        _series = nextSeries;
+        _xAxisMode =
+            dataset.hasTimestamps ? XAxisMode.relativeTime : XAxisMode.step;
+        _selectedKeys
+          ..clear()
+          ..addAll(nextSelected);
+        _expandedGroupPaths
+          ..clear()
+          ..addAll(nextExpanded);
         _loaded = true;
         _loading = false;
       });
+
       RuntimeDiagnostics.instance.record(
-        'metrics_request_succeeded',
-        'Loaded sampled history for Metrics tab',
+        'system_metrics_request_succeeded',
+        'Loaded system metrics for Run detail',
         data: {
           ...requestDetails,
-          'seriesCount': series.length,
+          'rowCount': rawRows.length,
+          'availableKeyCount': dataset.availableKeys.length,
           'pointCounts': {
-            for (final metricSeries in series)
+            for (final metricSeries in nextSeries)
               metricSeries.key: metricSeries.points.length,
           },
         },
       );
     } catch (e, st) {
       RuntimeDiagnostics.instance.record(
-        'metrics_request_failed',
-        'Failed to load sampled history for Metrics tab',
+        'system_metrics_request_failed',
+        'Failed to load system metrics for Run detail',
         data: {...requestDetails, 'error': e.toString()},
         stackTrace: st,
       );
@@ -206,8 +166,8 @@ class _MetricsChartPanelState extends ConsumerState<MetricsChartPanel> {
         _selectedKeys.add(key);
         _expandedGroupPaths.addAll(metricGroupPathsForKey(key));
       }
+      _series = _buildSeries(_rows, _selectedKeys);
     });
-    _loadMetrics();
   }
 
   void _setGroupExpanded(String path, bool expanded) {
@@ -239,7 +199,7 @@ class _MetricsChartPanelState extends ConsumerState<MetricsChartPanel> {
                         children: [
                           const Expanded(
                             child: Text(
-                              'Select Metrics',
+                              'Select System Metrics',
                               style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w600,
@@ -286,10 +246,12 @@ class _MetricsChartPanelState extends ConsumerState<MetricsChartPanel> {
 
   @override
   Widget build(BuildContext context) {
-    final availableKeys = _availableKeys;
-
-    if (availableKeys.isEmpty) {
-      return const Center(child: Text('No metrics logged'));
+    if (_loading && !_loaded) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_error != null) return _buildErrorView();
+    if (_loaded && _availableKeys.isEmpty) {
+      return const Center(child: Text('No system metrics logged'));
     }
 
     return LayoutBuilder(
@@ -308,7 +270,7 @@ class _MetricsChartPanelState extends ConsumerState<MetricsChartPanel> {
                         children: [
                           const Expanded(
                             child: Text(
-                              'Metrics',
+                              'System Metrics',
                               style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
@@ -328,7 +290,7 @@ class _MetricsChartPanelState extends ConsumerState<MetricsChartPanel> {
                     ),
                     Expanded(
                       child: GroupedMetricSelector(
-                        metricKeys: availableKeys,
+                        metricKeys: _availableKeys,
                         selectedKeys: _selectedKeys,
                         expandedGroupPaths: _expandedGroupPaths,
                         onToggleMetric: _toggleMetricSelection,
@@ -355,8 +317,8 @@ class _MetricsChartPanelState extends ConsumerState<MetricsChartPanel> {
                 children: [
                   FilledButton.tonalIcon(
                     onPressed: _showMetricSelectorSheet,
-                    icon: const Icon(Icons.tune),
-                    label: Text('Metrics (${_selectedKeys.length})'),
+                    icon: const Icon(Icons.memory),
+                    label: Text('System (${_selectedKeys.length})'),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -371,7 +333,7 @@ class _MetricsChartPanelState extends ConsumerState<MetricsChartPanel> {
               ),
             ),
             Expanded(child: _buildChartArea()),
-            if (_loaded && _series.isNotEmpty) _buildSmoothingControl(),
+            if (_series.isNotEmpty) _buildSmoothingControl(),
           ],
         );
       },
@@ -386,20 +348,25 @@ class _MetricsChartPanelState extends ConsumerState<MetricsChartPanel> {
   }
 
   Widget _buildChartArea() {
-    if (_loading) return const Center(child: CircularProgressIndicator());
-    if (_error != null) return _buildErrorView();
-    if (!_loaded || _series.isEmpty) {
-      return const Center(child: Text('Select metrics to chart'));
+    if (_selectedKeys.isEmpty) {
+      return const Center(child: Text('Select system metrics to chart'));
+    }
+    if (_series.isEmpty) {
+      return const Center(child: Text('No system metrics found for selection'));
     }
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(4, 0, 12, 0),
-      child: WandbLineChart(series: _series, smoothing: _smoothing),
+      child: WandbLineChart(
+        series: _series,
+        smoothing: _smoothing,
+        xAxisMode: _xAxisMode,
+      ),
     );
   }
 
   Widget _buildSmoothingControl({bool compact = false}) {
-    if (!_loaded || _series.isEmpty) return const SizedBox.shrink();
+    if (_series.isEmpty) return const SizedBox.shrink();
 
     return Padding(
       padding: EdgeInsets.fromLTRB(compact ? 8 : 16, 0, compact ? 8 : 16, 8),
@@ -438,6 +405,35 @@ class _MetricsChartPanelState extends ConsumerState<MetricsChartPanel> {
     );
   }
 
+  List<String> _defaultSystemKeys(List<String> availableKeys) {
+    final rankedKeys = [...availableKeys];
+    rankedKeys.sort((a, b) {
+      final scoreComparison = _systemMetricPriorityScore(
+        b,
+      ).compareTo(_systemMetricPriorityScore(a));
+      if (scoreComparison != 0) return scoreComparison;
+      return a.compareTo(b);
+    });
+    return rankedKeys.take(_defaultSystemSelectionLimit).toList();
+  }
+
+  List<MetricSeries> _buildSeries(
+    List<_SystemMetricRow> rows,
+    Set<String> selectedKeys,
+  ) {
+    return selectedKeys.map((key) {
+      final points = <MetricPoint>[];
+      for (final row in rows) {
+        final value = row.metrics[key];
+        if (value == null) continue;
+        points.add(
+          MetricPoint(step: row.step, value: value, timestamp: row.timestamp),
+        );
+      }
+      return MetricSeries(key: key, points: points);
+    }).toList();
+  }
+
   Widget _buildErrorView() {
     final diagnostics = RuntimeDiagnostics.instance;
     final requestText =
@@ -449,7 +445,7 @@ class _MetricsChartPanelState extends ConsumerState<MetricsChartPanel> {
       padding: const EdgeInsets.all(16),
       children: [
         const Text(
-          'Failed to load metrics',
+          'Failed to load system metrics',
           style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 8),
@@ -461,15 +457,18 @@ class _MetricsChartPanelState extends ConsumerState<MetricsChartPanel> {
           ),
         ),
         const SizedBox(height: 16),
-        _DiagnosticSection(title: 'Request Parameters', body: requestText),
+        _SystemDiagnosticSection(
+          title: 'Request Parameters',
+          body: requestText,
+        ),
         const SizedBox(height: 12),
-        _DiagnosticSection(
+        _SystemDiagnosticSection(
           title: 'Recent Diagnostics',
           body: diagnostics.formatRecentEntries(),
         ),
         if (diagnostics.logFilePath != null) ...[
           const SizedBox(height: 12),
-          _DiagnosticSection(
+          _SystemDiagnosticSection(
             title: 'Local Log File',
             body: diagnostics.logFilePath!,
           ),
@@ -478,7 +477,7 @@ class _MetricsChartPanelState extends ConsumerState<MetricsChartPanel> {
         Align(
           alignment: Alignment.centerLeft,
           child: OutlinedButton.icon(
-            onPressed: _loadMetrics,
+            onPressed: _loadSystemMetrics,
             icon: const Icon(Icons.refresh),
             label: const Text('Retry'),
           ),
@@ -488,8 +487,8 @@ class _MetricsChartPanelState extends ConsumerState<MetricsChartPanel> {
   }
 }
 
-class _DiagnosticSection extends StatelessWidget {
-  const _DiagnosticSection({required this.title, required this.body});
+class _SystemDiagnosticSection extends StatelessWidget {
+  const _SystemDiagnosticSection({required this.title, required this.body});
 
   final String title;
   final String body;
@@ -529,47 +528,158 @@ class _DiagnosticSection extends StatelessWidget {
   }
 }
 
-int _metricPriorityScore(String key, Map<String, dynamic> historyKeyMap) {
+class _SystemMetricsDataset {
+  const _SystemMetricsDataset({
+    required this.rows,
+    required this.availableKeys,
+    required this.hasTimestamps,
+  });
+
+  final List<_SystemMetricRow> rows;
+  final List<String> availableKeys;
+  final bool hasTimestamps;
+
+  factory _SystemMetricsDataset.fromRows(List<Map<String, dynamic>> rawRows) {
+    DateTime? firstTimestamp;
+    for (final row in rawRows) {
+      final timestamp = _extractTimestamp(row);
+      if (timestamp != null) {
+        firstTimestamp = timestamp;
+        break;
+      }
+    }
+
+    final parsedRows = <_SystemMetricRow>[];
+    final availableKeys = <String>{};
+
+    for (var index = 0; index < rawRows.length; index++) {
+      final row = rawRows[index];
+      final timestamp = _extractTimestamp(row);
+      final step = _extractStep(row, index);
+      final metrics = <String, double>{};
+      _flattenNumericMetrics(row, metrics);
+      availableKeys.addAll(metrics.keys);
+
+      final plottedStep =
+          timestamp != null && firstTimestamp != null
+              ? timestamp.difference(firstTimestamp).inMilliseconds / 1000
+              : step;
+
+      parsedRows.add(
+        _SystemMetricRow(
+          step: plottedStep,
+          timestamp: timestamp,
+          metrics: Map.unmodifiable(metrics),
+        ),
+      );
+    }
+
+    final sortedKeys = availableKeys.toList()..sort();
+    return _SystemMetricsDataset(
+      rows: List.unmodifiable(parsedRows),
+      availableKeys: List.unmodifiable(sortedKeys),
+      hasTimestamps: firstTimestamp != null,
+    );
+  }
+}
+
+class _SystemMetricRow {
+  const _SystemMetricRow({
+    required this.step,
+    required this.timestamp,
+    required this.metrics,
+  });
+
+  final num step;
+  final DateTime? timestamp;
+  final Map<String, double> metrics;
+}
+
+void _flattenNumericMetrics(
+  Map<String, dynamic> row,
+  Map<String, double> output, [
+  String prefix = '',
+]) {
+  row.forEach((key, value) {
+    if (key.startsWith('_')) return;
+    final nextKey = prefix.isEmpty ? key : '$prefix/$key';
+
+    if (value is Map<String, dynamic>) {
+      _flattenNumericMetrics(value, output, nextKey);
+      return;
+    }
+
+    if (value is Map) {
+      final nested = value.map(
+        (nestedKey, nestedValue) => MapEntry(nestedKey.toString(), nestedValue),
+      );
+      _flattenNumericMetrics(nested, output, nextKey);
+      return;
+    }
+
+    if (value is num) {
+      final doubleValue = value.toDouble();
+      if (doubleValue.isNaN || doubleValue.isInfinite) return;
+      output[nextKey] = doubleValue;
+    }
+  });
+}
+
+DateTime? _extractTimestamp(Map<String, dynamic> row) {
+  final rawValue = row['_timestamp'] ?? row['timestamp'];
+  if (rawValue is num) {
+    final milliseconds =
+        rawValue > 1000000000000 ? rawValue.toInt() : rawValue.toInt() * 1000;
+    return DateTime.fromMillisecondsSinceEpoch(milliseconds);
+  }
+
+  if (rawValue is String) {
+    final parsed = DateTime.tryParse(rawValue);
+    if (parsed != null) return parsed;
+
+    final parsedNumber = num.tryParse(rawValue);
+    if (parsedNumber != null) {
+      final milliseconds =
+          parsedNumber > 1000000000000
+              ? parsedNumber.toInt()
+              : parsedNumber.toInt() * 1000;
+      return DateTime.fromMillisecondsSinceEpoch(milliseconds);
+    }
+  }
+
+  return null;
+}
+
+num _extractStep(Map<String, dynamic> row, int index) {
+  final rawValue = row['_step'] ?? row['step'] ?? index;
+  return rawValue is num ? rawValue : index;
+}
+
+int _systemMetricPriorityScore(String key) {
   final lowerKey = key.toLowerCase();
   var score = 0;
 
-  if (_defaultMetricPrefixes.any(lowerKey.startsWith)) {
-    score += 500;
-  }
-
-  if (_deprioritizedMetricPrefixes.any(lowerKey.startsWith)) {
-    score -= 350;
-  }
-
-  if (_headlineMetricTokens.any(lowerKey.contains)) {
-    score += 350;
-  } else if (_supportingMetricTokens.any(lowerKey.contains)) {
-    score += 180;
-  }
-
-  if (_deprioritizedMetricTokens.any(lowerKey.contains)) {
-    score -= 275;
-  }
-
-  score += _historyPointCountForKey(key, historyKeyMap) ~/ 200;
-  return score;
-}
-
-int _historyPointCountForKey(String key, Map<String, dynamic> historyKeyMap) {
-  final entry = historyKeyMap[key];
-  if (entry is! Map) return 0;
-
-  final typeCounts = entry['typeCounts'];
-  if (typeCounts is! List) return 0;
-
-  var count = 0;
-  for (final typeCount in typeCounts) {
-    if (typeCount is! Map) continue;
-    if (typeCount['type'] != 'number') continue;
-    final rawCount = typeCount['count'];
-    if (rawCount is num) {
-      count += rawCount.toInt();
+  for (var index = 0; index < _systemPreferredTokens.length; index++) {
+    if (lowerKey.contains(_systemPreferredTokens[index])) {
+      score += math.max(8, 32 - index * 3);
     }
   }
-  return count;
+
+  if (lowerKey.contains('system/')) {
+    score += 10;
+  }
+
+  if (lowerKey.contains('util') || lowerKey.contains('usage')) {
+    score += 16;
+  }
+
+  if (lowerKey.contains('temp') || lowerKey.contains('temperature')) {
+    score += 14;
+  }
+
+  if (_systemDeprioritizedTokens.any(lowerKey.contains)) {
+    score -= 40;
+  }
+
+  return score;
 }

@@ -7,7 +7,9 @@ import '../../../core/utils/format_utils.dart';
 import '../../../core/utils/responsive.dart';
 import 'widgets/config_viewer.dart';
 import 'widgets/metrics_chart_panel.dart';
+import 'widgets/run_files_panel.dart';
 import 'widgets/summary_viewer.dart';
+import 'widgets/system_metrics_panel.dart';
 
 class RunDetailScreen extends ConsumerStatefulWidget {
   const RunDetailScreen({
@@ -33,17 +35,20 @@ class RunDetailScreen extends ConsumerStatefulWidget {
 
 class _RunDetailScreenState extends ConsumerState<RunDetailScreen>
     with TickerProviderStateMixin {
-  late TabController _tabController;
+  late final TabController _primaryTabController;
+  late final TabController _detailTabController;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _primaryTabController = TabController(length: 4, vsync: this);
+    _detailTabController = TabController(length: 3, vsync: this);
   }
 
   @override
   void dispose() {
-    _tabController.dispose();
+    _primaryTabController.dispose();
+    _detailTabController.dispose();
     super.dispose();
   }
 
@@ -51,17 +56,13 @@ class _RunDetailScreenState extends ConsumerState<RunDetailScreen>
   Widget build(BuildContext context) {
     final run = widget.run;
     if (run == null) {
-      final body = const Center(child: Text('Run data not available'));
+      const body = Center(child: Text('Run data not available'));
       if (widget.embedded) return body;
-      return Scaffold(
-        appBar: AppBar(title: Text(widget.runName)),
-        body: body,
-      );
+      return Scaffold(appBar: AppBar(title: Text(widget.runName)), body: body);
     }
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        // When embedded in master-detail, check if we have enough width for side-by-side
         final wideDetail =
             widget.embedded && constraints.maxWidth >= 500 ||
             !widget.embedded && !isCompact(constraints.maxWidth);
@@ -74,15 +75,13 @@ class _RunDetailScreenState extends ConsumerState<RunDetailScreen>
     );
   }
 
-  /// Narrow: traditional tab-based layout.
   Widget _buildNarrowLayout(WandbRun run) {
+    final tabs = _buildPrimaryTabs(run);
     final content = Column(
       children: [
-        // Header info when embedded
         if (widget.embedded) _EmbeddedHeader(run: run),
-        // Tab bar
         TabBar(
-          controller: _tabController,
+          controller: _primaryTabController,
           isScrollable: true,
           tabAlignment: TabAlignment.start,
           tabs: const [
@@ -93,20 +92,7 @@ class _RunDetailScreenState extends ConsumerState<RunDetailScreen>
           ],
         ),
         Expanded(
-          child: TabBarView(
-            controller: _tabController,
-            children: [
-              _OverviewTab(run: run),
-              MetricsChartPanel(
-                entity: widget.entity,
-                project: widget.project,
-                runName: run.name,
-                run: run,
-              ),
-              _PlaceholderTab(icon: Icons.memory, label: 'System Metrics'),
-              _PlaceholderTab(icon: Icons.folder_open, label: 'Run Files'),
-            ],
-          ),
+          child: TabBarView(controller: _primaryTabController, children: tabs),
         ),
       ],
     );
@@ -117,7 +103,7 @@ class _RunDetailScreenState extends ConsumerState<RunDetailScreen>
       appBar: AppBar(
         title: _AppBarTitle(run: run),
         bottom: TabBar(
-          controller: _tabController,
+          controller: _primaryTabController,
           isScrollable: true,
           tabAlignment: TabAlignment.start,
           tabs: const [
@@ -128,24 +114,10 @@ class _RunDetailScreenState extends ConsumerState<RunDetailScreen>
           ],
         ),
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          _OverviewTab(run: run),
-          MetricsChartPanel(
-            entity: widget.entity,
-            project: widget.project,
-            runName: run.name,
-            run: run,
-          ),
-          _PlaceholderTab(icon: Icons.memory, label: 'System Metrics'),
-          _PlaceholderTab(icon: Icons.folder_open, label: 'Run Files'),
-        ],
-      ),
+      body: TabBarView(controller: _primaryTabController, children: tabs),
     );
   }
 
-  /// Wide: Overview on left, Metrics on right — no tabs needed.
   Widget _buildWideLayout(WandbRun run, double width) {
     final body = Column(
       children: [
@@ -154,19 +126,31 @@ class _RunDetailScreenState extends ConsumerState<RunDetailScreen>
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Left: Overview (scrollable)
-              SizedBox(
-                width: width * 0.42,
-                child: _OverviewTab(run: run),
-              ),
+              SizedBox(width: width * 0.42, child: _OverviewTab(run: run)),
               const VerticalDivider(width: 1, thickness: 1),
-              // Right: Metrics chart
               Expanded(
-                child: MetricsChartPanel(
-                  entity: widget.entity,
-                  project: widget.project,
-                  runName: run.name,
-                  run: run,
+                child: Column(
+                  children: [
+                    Material(
+                      color: Colors.transparent,
+                      child: TabBar(
+                        controller: _detailTabController,
+                        isScrollable: true,
+                        tabAlignment: TabAlignment.start,
+                        tabs: const [
+                          Tab(text: 'Metrics'),
+                          Tab(text: 'System'),
+                          Tab(text: 'Files'),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: TabBarView(
+                        controller: _detailTabController,
+                        children: _buildDetailTabs(run),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -177,16 +161,39 @@ class _RunDetailScreenState extends ConsumerState<RunDetailScreen>
 
     if (widget.embedded) return body;
 
-    return Scaffold(
-      appBar: AppBar(title: _AppBarTitle(run: run)),
-      body: body,
-    );
+    return Scaffold(appBar: AppBar(title: _AppBarTitle(run: run)), body: body);
+  }
+
+  List<Widget> _buildPrimaryTabs(WandbRun run) {
+    return [_OverviewTab(run: run), ..._buildDetailTabs(run)];
+  }
+
+  List<Widget> _buildDetailTabs(WandbRun run) {
+    return [
+      MetricsChartPanel(
+        entity: widget.entity,
+        project: widget.project,
+        runName: run.name,
+        run: run,
+      ),
+      SystemMetricsPanel(
+        entity: widget.entity,
+        project: widget.project,
+        runName: run.name,
+      ),
+      RunFilesPanel(
+        entity: widget.entity,
+        project: widget.project,
+        runName: run.name,
+      ),
+    ];
   }
 }
 
 /// Compact header shown when detail is embedded in master-detail split.
 class _EmbeddedHeader extends StatelessWidget {
   const _EmbeddedHeader({required this.run});
+
   final WandbRun run;
 
   @override
@@ -194,7 +201,7 @@ class _EmbeddedHeader extends StatelessWidget {
     final stateColor = WandbColors.forRunState(run.state.name);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      decoration: BoxDecoration(
+      decoration: const BoxDecoration(
         border: Border(bottom: BorderSide(color: Colors.white12)),
       ),
       child: Row(
@@ -227,6 +234,7 @@ class _EmbeddedHeader extends StatelessWidget {
 
 class _AppBarTitle extends StatelessWidget {
   const _AppBarTitle({required this.run});
+
   final WandbRun run;
 
   @override
@@ -258,28 +266,9 @@ class _AppBarTitle extends StatelessWidget {
   }
 }
 
-class _PlaceholderTab extends StatelessWidget {
-  const _PlaceholderTab({required this.icon, required this.label});
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 48, color: Colors.white24),
-          const SizedBox(height: 8),
-          Text(label, style: const TextStyle(color: Colors.white38)),
-        ],
-      ),
-    );
-  }
-}
-
 class _OverviewTab extends StatelessWidget {
   const _OverviewTab({required this.run});
+
   final WandbRun run;
 
   @override
@@ -293,9 +282,10 @@ class _OverviewTab extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Run Info',
-                    style:
-                        TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                const Text(
+                  'Run Info',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                ),
                 const SizedBox(height: 10),
                 _InfoRow('Name', run.displayName),
                 _InfoRow('ID', run.name),
@@ -323,6 +313,7 @@ class _OverviewTab extends StatelessWidget {
 
 class _InfoRow extends StatelessWidget {
   const _InfoRow(this.label, this.value);
+
   final String label;
   final String value;
 
@@ -335,12 +326,12 @@ class _InfoRow extends StatelessWidget {
         children: [
           SizedBox(
             width: 90,
-            child: Text(label,
-                style: const TextStyle(color: Colors.white54, fontSize: 13)),
+            child: Text(
+              label,
+              style: const TextStyle(color: Colors.white54, fontSize: 13),
+            ),
           ),
-          Expanded(
-            child: Text(value, style: const TextStyle(fontSize: 13)),
-          ),
+          Expanded(child: Text(value, style: const TextStyle(fontSize: 13))),
         ],
       ),
     );

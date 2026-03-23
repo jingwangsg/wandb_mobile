@@ -237,4 +237,43 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('groups metrics by slash prefixes in wide layout', (
+    tester,
+  ) async {
+    final repository = RecordingRunsRepository();
+
+    await tester.pumpWidget(
+      _buildMetricsPanel(
+        repository: repository,
+        run: _trainMetricsRun,
+        width: 700,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('train'), findsWidgets);
+    expect(find.text('flow_matching_loss'), findsOneWidget);
+    expect(find.text('future_latent_loss'), findsOneWidget);
+  });
+
+  testWidgets('opens grouped selector sheet in narrow layout', (tester) async {
+    final repository = RecordingRunsRepository();
+
+    await tester.pumpWidget(
+      _buildMetricsPanel(
+        repository: repository,
+        run: _trainMetricsRun,
+        width: 360,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.textContaining('Metrics ('));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Select Metrics'), findsOneWidget);
+    expect(find.text('train'), findsWidgets);
+    expect(find.text('flow_matching_loss'), findsOneWidget);
+  });
 }

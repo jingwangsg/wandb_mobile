@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wandb_mobile/core/api/graphql_client.dart';
 import 'package:wandb_mobile/core/models/metric_point.dart';
+import 'package:wandb_mobile/core/models/run_file.dart';
 import 'package:wandb_mobile/features/runs/data/runs_repository.dart';
 
 class RecordingGraphqlClient extends GraphqlClient {
@@ -84,6 +85,101 @@ void main() {
               (value) => value.points[0].timestamp,
               'first timestamp',
               DateTime.fromMillisecondsSinceEpoch(1700000000 * 1000),
+            ),
+      ]);
+    });
+  });
+
+  group('RunsRepository.getSystemMetrics', () {
+    test('decodes string and map event rows', () async {
+      final client = RecordingGraphqlClient((_, __) async {
+        return {
+          'project': {
+            'run': {
+              'events': [
+                jsonEncode({
+                  '_timestamp': 1700000000,
+                  'system': {'cpu': 0.5},
+                }),
+                {
+                  '_timestamp': 1700000001,
+                  'system': {'memory': 0.75},
+                },
+              ],
+            },
+          },
+        };
+      });
+      final repository = RunsRepository(client);
+
+      final rows = await repository.getSystemMetrics(
+        entity: 'entity',
+        project: 'project',
+        runName: 'run',
+        samples: 5,
+      );
+
+      expect(rows, hasLength(2));
+      expect(rows.first['system'], isA<Map<String, dynamic>>());
+      expect((rows.first['system'] as Map<String, dynamic>)['cpu'], 0.5);
+      expect((rows.last['system'] as Map<String, dynamic>)['memory'], 0.75);
+    });
+  });
+
+  group('RunsRepository.getRunFiles', () {
+    test('parses files and pagination metadata', () async {
+      final client = RecordingGraphqlClient((_, __) async {
+        return {
+          'project': {
+            'run': {
+              'fileCount': 12,
+              'files': {
+                'edges': [
+                  {
+                    'cursor': 'cursor-1',
+                    'node': {
+                      'id': 'file-1',
+                      'name': 'media/table.table.json',
+                      'url': 'https://example.com/file-1',
+                      'directUrl': 'https://example.com/direct-file-1',
+                      'sizeBytes': 128,
+                      'mimetype': 'application/json',
+                      'updatedAt': '2024-01-01T00:00:00Z',
+                      'md5': 'abc123',
+                    },
+                  },
+                ],
+                'pageInfo': {'endCursor': 'cursor-1', 'hasNextPage': true},
+              },
+            },
+          },
+        };
+      });
+      final repository = RunsRepository(client);
+
+      final result = await repository.getRunFiles(
+        entity: 'entity',
+        project: 'project',
+        runName: 'run',
+      );
+
+      expect(result.totalCount, 12);
+      expect(result.endCursor, 'cursor-1');
+      expect(result.hasNextPage, isTrue);
+      expect(result.items, [
+        isA<RunFile>()
+            .having((file) => file.id, 'id', 'file-1')
+            .having((file) => file.name, 'name', 'media/table.table.json')
+            .having(
+              (file) => file.directUrl,
+              'directUrl',
+              'https://example.com/direct-file-1',
+            )
+            .having((file) => file.sizeBytes, 'sizeBytes', 128)
+            .having(
+              (file) => file.updatedAt,
+              'updatedAt',
+              DateTime.parse('2024-01-01T00:00:00Z'),
             ),
       ]);
     });
