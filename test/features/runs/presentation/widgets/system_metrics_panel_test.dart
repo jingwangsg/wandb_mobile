@@ -72,6 +72,9 @@ void main() {
     await tester.pumpWidget(_buildSystemPanel(repository));
     await tester.pumpAndSettle();
 
+    await tester.tap(find.byTooltip('Show selector'));
+    await tester.pumpAndSettle();
+
     expect(find.text('system'), findsWidgets);
     expect(find.text('gpu'), findsWidgets);
     expect(find.text('utilization'), findsOneWidget);

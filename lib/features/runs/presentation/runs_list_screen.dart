@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/models/paginated.dart';
+import '../../../core/models/resource_refs.dart';
 import '../../../core/models/run.dart';
 import '../../../core/theme/colors.dart';
 import '../../../core/utils/format_utils.dart';
@@ -25,15 +27,16 @@ class RunsListScreen extends ConsumerStatefulWidget {
 }
 
 class _RunsListScreenState extends ConsumerState<RunsListScreen> {
-  String get _projectPath => '${widget.entity}/${widget.project}';
+  ProjectRef get _projectRef =>
+      ProjectRef(entity: widget.entity, project: widget.project);
 
   /// Selected run for wide-screen detail panel.
   WandbRun? _selectedRun;
 
   @override
   Widget build(BuildContext context) {
-    final runsAsync = ref.watch(runsProvider(_projectPath));
-    final filters = ref.watch(runFiltersProvider(_projectPath));
+    final runsAsync = ref.watch(runsProvider(_projectRef));
+    final filters = ref.watch(runFiltersProvider(_projectRef));
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -55,25 +58,25 @@ class _RunsListScreenState extends ConsumerState<RunsListScreen> {
           },
           onSearchChanged: (v) {
             ref
-                .read(runFiltersProvider(_projectPath).notifier)
+                .read(runFiltersProvider(_projectRef).notifier)
                 .setSearchQuery(v);
           },
           onClearSearch: () {
             ref
-                .read(runFiltersProvider(_projectPath).notifier)
+                .read(runFiltersProvider(_projectRef).notifier)
                 .clearSearchQuery();
           },
           onClearAdvancedFilter: () {
             ref
-                .read(runFiltersProvider(_projectPath).notifier)
+                .read(runFiltersProvider(_projectRef).notifier)
                 .clearAdvancedFilter();
           },
           onRefresh:
-              () => ref.read(runsProvider(_projectPath).notifier).refresh(),
+              () => ref.read(runsProvider(_projectRef).notifier).refresh(),
           onLoadMore:
-              () => ref.read(runsProvider(_projectPath).notifier).loadMore(),
+              () => ref.read(runsProvider(_projectRef).notifier).loadMore(),
           onRetry:
-              () => ref.read(runsProvider(_projectPath).notifier).refresh(),
+              () => ref.read(runsProvider(_projectRef).notifier).refresh(),
         );
 
         if (!wide) {
@@ -140,7 +143,7 @@ class _RunsListScreenState extends ConsumerState<RunsListScreen> {
         PopupMenuButton<String>(
           icon: const Icon(Icons.sort),
           onSelected: (order) {
-            ref.read(runFiltersProvider(_projectPath).notifier).setOrder(order);
+            ref.read(runFiltersProvider(_projectRef).notifier).setOrder(order);
           },
           itemBuilder:
               (_) => const [
@@ -167,7 +170,7 @@ class _RunsListScreenState extends ConsumerState<RunsListScreen> {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      builder: (_) => RunFilterSheet(projectPath: _projectPath),
+      builder: (_) => RunFilterSheet(projectRef: _projectRef),
     );
   }
 }
@@ -187,7 +190,7 @@ class _RunsListPanel extends StatelessWidget {
     this.selectedRunName,
   });
 
-  final AsyncValue<dynamic> runsAsync;
+  final AsyncValue<PaginatedResult<WandbRun>> runsAsync;
   final RunFilters filters;
   final String? selectedRunName;
   final void Function(WandbRun) onRunTap;
@@ -278,7 +281,7 @@ class _RunsListPanel extends StatelessWidget {
                       );
                     }
 
-                    final run = result.items[index] as WandbRun;
+                    final run = result.items[index];
                     final isSelected = run.name == selectedRunName;
                     return _RunTile(
                       run: run,

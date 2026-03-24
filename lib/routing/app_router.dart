@@ -12,12 +12,12 @@ import '../features/runs/presentation/runs_list_screen.dart';
 import '../features/settings/presentation/settings_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
-  final auth = ref.watch(authProvider);
+  final authStatus = ref.watch(authStatusProvider);
 
   return GoRouter(
     initialLocation: '/dashboard',
     redirect: (context, state) {
-      final isLoggedIn = auth.status == AuthStatus.authenticated;
+      final isLoggedIn = authStatus == AuthStatus.authenticated;
       final isLoginPage = state.matchedLocation == '/login';
 
       if (!isLoggedIn && !isLoginPage) return '/login';

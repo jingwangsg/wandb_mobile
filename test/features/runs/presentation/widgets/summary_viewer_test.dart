@@ -1,36 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:wandb_mobile/features/runs/presentation/widgets/config_viewer.dart';
+import 'package:wandb_mobile/features/runs/presentation/widgets/summary_viewer.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('opens fullscreen viewer with formatted json content', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      const MaterialApp(
-        home: Scaffold(
-          body: ConfigViewer(
-            config: {'payload': '{"foo":1,"bar":{"baz":true}}'},
-          ),
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.byIcon(Icons.open_in_full), findsOneWidget);
-
-    await tester.tap(find.byIcon(Icons.open_in_full));
-    await tester.pumpAndSettle();
-
-    expect(find.text('payload'), findsWidgets);
-    expect(find.textContaining('"foo": 1'), findsOneWidget);
-    expect(find.textContaining('"baz": true'), findsOneWidget);
-  });
-
-  testWidgets('tapping config key copies key text', (tester) async {
+  testWidgets('tapping summary key copies key text', (tester) async {
     String? copied;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(SystemChannels.platform, (call) async {
@@ -47,20 +23,19 @@ void main() {
     await tester.pumpWidget(
       const MaterialApp(
         home: Scaffold(
-          body: ConfigViewer(config: {'payload': 'value'}),
+          body: SummaryViewer(metrics: {'loss': 0.123456}),
         ),
       ),
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('payload').first);
+    await tester.tap(find.text('loss'));
     await tester.pump();
 
-    expect(copied, 'payload');
+    expect(copied, 'loss');
   });
 
-  testWidgets('tapping config value copies full value', (tester) async {
-    const longValue = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-long-value-extra-padding-12345';
+  testWidgets('tapping summary value copies full primitive value', (tester) async {
     String? copied;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(SystemChannels.platform, (call) async {
@@ -77,17 +52,53 @@ void main() {
     await tester.pumpWidget(
       const MaterialApp(
         home: Scaffold(
-          body: ConfigViewer(
-            config: {'payload': longValue},
-          ),
+          body: SummaryViewer(metrics: {'loss': 0.123456}),
         ),
       ),
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const ValueKey('config-value-payload')));
+    await tester.tap(find.text('0.1235'));
     await tester.pump();
 
-    expect(copied, longValue);
+    expect(copied, '0.123456');
+  });
+
+  testWidgets('tapping summary value copies full structured value', (tester) async {
+    String? copied;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+          if (call.method == 'Clipboard.setData') {
+            copied = (call.arguments as Map)['text'] as String?;
+          }
+          return null;
+        });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null);
+    });
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: SummaryViewer(metrics: {'payload': {'foo': true, 'bar': [1, 2]}}),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.textContaining('{foo: true, bar: [1, 2]}'));
+    await tester.pump();
+
+    expect(
+      copied,
+      '''{
+  "foo": true,
+  "bar": [
+    1,
+    2
+  ]
+}''',
+    );
   });
 }

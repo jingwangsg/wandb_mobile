@@ -2,9 +2,11 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/models/resource_refs.dart';
 import '../../../core/models/metric_point.dart';
 import '../../../core/models/paginated.dart';
 import '../../../core/models/run.dart';
+import '../../../core/providers/paginated_async_notifier.dart';
 import '../../auth/providers/auth_providers.dart';
 import '../data/runs_repository.dart';
 import '../models/run_filters.dart';
@@ -56,19 +58,18 @@ class RunFiltersNotifier extends StateNotifier<RunFilters> {
 }
 
 final runFiltersProvider =
-    StateNotifierProvider.family<RunFiltersNotifier, RunFilters, String>((
+    StateNotifierProvider.family<RunFiltersNotifier, RunFilters, ProjectRef>((
       ref,
-      projectPath,
+      projectRef,
     ) {
       return RunFiltersNotifier();
     });
 
 // ─── Runs List ───────────────────────────────────────────
 
-class RunsListNotifier
-    extends StateNotifier<AsyncValue<PaginatedResult<WandbRun>>> {
+class RunsListNotifier extends PaginatedAsyncNotifier<WandbRun> {
   RunsListNotifier(this._repo, this._entity, this._project, this._filters)
-    : super(const AsyncValue.loading()) {
+    : super() {
     load();
   }
 
@@ -77,68 +78,44 @@ class RunsListNotifier
   final String _project;
   final RunFilters _filters;
 
-  Future<void> load() async {
-    state = const AsyncValue.loading();
-    try {
-      final result = await _repo.getRuns(
-        entity: _entity,
-        project: _project,
-        order: _filters.order,
-        filters: _filters.toApiFilters(),
-      );
-      state = AsyncValue.data(result);
-    } catch (e, st) {
-      state = AsyncValue.error(e, st);
-    }
+  @override
+  Future<PaginatedResult<WandbRun>> loadPage({String? cursor}) {
+    return _repo.getRuns(
+      entity: _entity,
+      project: _project,
+      cursor: cursor,
+      order: _filters.order,
+      filters: _filters.toApiFilters(),
+    );
   }
-
-  Future<void> loadMore() async {
-    final current = state.valueOrNull;
-    if (current == null || !current.hasNextPage) return;
-
-    try {
-      final next = await _repo.getRuns(
-        entity: _entity,
-        project: _project,
-        cursor: current.endCursor,
-        order: _filters.order,
-        filters: _filters.toApiFilters(),
-      );
-      state = AsyncValue.data(current.appendPage(next));
-    } catch (e, st) {
-      state = AsyncValue.error(e, st);
-    }
-  }
-
-  Future<void> refresh() => load();
 }
 
-/// Provider key: "entity/project"
 final runsProvider = StateNotifierProvider.family<
   RunsListNotifier,
   AsyncValue<PaginatedResult<WandbRun>>,
-  String
->((ref, projectPath) {
-  final parts = projectPath.split('/');
-  final entity = parts[0];
-  final project = parts[1];
+  ProjectRef
+>((ref, projectRef) {
   final repo = ref.watch(runsRepositoryProvider);
-  final filters = ref.watch(runFiltersProvider(projectPath));
-  return RunsListNotifier(repo, entity, project, filters);
+  final filters = ref.watch(runFiltersProvider(projectRef));
+  return RunsListNotifier(
+    repo,
+    projectRef.entity,
+    projectRef.project,
+    filters,
+  );
 });
 
 // ─── Sampled History (for charts) ────────────────────────
 
-/// Key: "entity/project/runName"
 final sampledHistoryProvider = FutureProvider.family<
   List<MetricSeries>,
-  ({String entity, String project, String runName, List<String> keys})
+  ({RunRef runRef, List<String> keys})
 >((ref, params) async {
   final repo = ref.watch(runsRepositoryProvider);
   return repo.getSampledHistory(
-    entity: params.entity,
-    project: params.project,
-    runName: params.runName,
+    entity: params.runRef.entity,
+    project: params.runRef.project,
+    runName: params.runRef.runName,
     keys: params.keys,
   );
 });

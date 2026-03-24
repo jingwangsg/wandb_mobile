@@ -1,4 +1,3 @@
-import 'dart:math' as math;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -14,28 +13,8 @@ import '../../../charts/presentation/widgets/grouped_chart_area.dart';
 import '../../../charts/presentation/widgets/wandb_line_chart.dart';
 import '../../../charts/providers/chart_preferences_providers.dart';
 import '../../providers/runs_providers.dart';
+import '../../utils/metric_selection.dart';
 import 'grouped_metric_selector.dart';
-
-const _defaultSystemSelectionLimit = 3;
-const _systemPreferredTokens = [
-  'gpu',
-  'cpu',
-  'memory',
-  'util',
-  'temperature',
-  'temp',
-  'power',
-  'disk',
-  'network',
-];
-const _systemDeprioritizedTokens = [
-  'error',
-  'errors',
-  'pid',
-  'process',
-  'correctedmemoryerrors',
-  'uncorrectedmemoryerrors',
-];
 
 class SystemMetricsPanel extends ConsumerStatefulWidget {
   const SystemMetricsPanel({
@@ -416,10 +395,7 @@ class _SystemMetricsPanelState extends ConsumerState<SystemMetricsPanel> {
   }
 
   String get _selectionSummary {
-    if (_selectedKeys.isEmpty) return 'No metrics selected';
-    final selected = _selectedKeys.toList(growable: false);
-    if (selected.length == 1) return selected.first;
-    return '${selected.first}, +${selected.length - 1} more';
+    return selectionSummary(_selectedKeys);
   }
 
   Widget _buildChartArea() {
@@ -482,32 +458,25 @@ class _SystemMetricsPanelState extends ConsumerState<SystemMetricsPanel> {
   }
 
   List<String> _defaultSystemKeys(List<String> availableKeys) {
-    final rankedKeys = [...availableKeys];
-    rankedKeys.sort((a, b) {
-      final scoreComparison = _systemMetricPriorityScore(
-        b,
-      ).compareTo(_systemMetricPriorityScore(a));
-      if (scoreComparison != 0) return scoreComparison;
-      return a.compareTo(b);
-    });
-    return rankedKeys.take(_defaultSystemSelectionLimit).toList();
+    return defaultSystemKeys(availableKeys);
   }
 
   List<MetricSeries> _buildSeries(
     List<_SystemMetricRow> rows,
     Set<String> selectedKeys,
   ) {
-    return selectedKeys.map((key) {
-      final points = <MetricPoint>[];
-      for (final row in rows) {
-        final value = row.metrics[key];
-        if (value == null) continue;
-        points.add(
-          MetricPoint(step: row.step, value: value, timestamp: row.timestamp),
-        );
-      }
-      return MetricSeries(key: key, points: points);
-    }).toList();
+    return systemSeriesFromRows(
+      rows
+          .map(
+            (row) => <String, Object?>{
+              'step': row.step,
+              'timestamp': row.timestamp,
+              'metrics': row.metrics,
+            },
+          )
+          .toList(growable: false),
+      selectedKeys,
+    );
   }
 
   Widget _buildErrorView() {
@@ -729,33 +698,4 @@ DateTime? _extractTimestamp(Map<String, dynamic> row) {
 num _extractStep(Map<String, dynamic> row, int index) {
   final rawValue = row['_step'] ?? row['step'] ?? index;
   return rawValue is num ? rawValue : index;
-}
-
-int _systemMetricPriorityScore(String key) {
-  final lowerKey = key.toLowerCase();
-  var score = 0;
-
-  for (var index = 0; index < _systemPreferredTokens.length; index++) {
-    if (lowerKey.contains(_systemPreferredTokens[index])) {
-      score += math.max(8, 32 - index * 3);
-    }
-  }
-
-  if (lowerKey.contains('system/')) {
-    score += 10;
-  }
-
-  if (lowerKey.contains('util') || lowerKey.contains('usage')) {
-    score += 16;
-  }
-
-  if (lowerKey.contains('temp') || lowerKey.contains('temperature')) {
-    score += 14;
-  }
-
-  if (_systemDeprioritizedTokens.any(lowerKey.contains)) {
-    score -= 40;
-  }
-
-  return score;
 }

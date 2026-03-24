@@ -13,41 +13,8 @@ import '../../../charts/models/run_chart_preferences.dart';
 import '../../../charts/presentation/widgets/grouped_chart_area.dart';
 import '../../../charts/providers/chart_preferences_providers.dart';
 import '../../providers/runs_providers.dart';
+import '../../utils/metric_selection.dart';
 import 'grouped_metric_selector.dart';
-
-const _defaultMetricSelectionLimit = 3;
-const _defaultMetricPrefixes = ['train/', 'val/', 'valid/', 'eval/', 'test/'];
-const _deprioritizedMetricPrefixes = ['system/', 'slowest_rank/', 'straggler/'];
-const _headlineMetricTokens = [
-  'loss',
-  'accuracy',
-  'acc',
-  'error',
-  'precision',
-  'recall',
-  'f1',
-  'auc',
-  'iou',
-  'bleu',
-  'perplexity',
-  'reward',
-];
-const _supportingMetricTokens = ['grad_norm', 'norm'];
-const _deprioritizedMetricTokens = [
-  'epoch',
-  'step',
-  'learning_rate',
-  'lr',
-  'runtime',
-  'time',
-  'tokens',
-  'batch',
-  'pixel_elements',
-  'memory',
-  'cpu',
-  'gpu',
-  'rank',
-];
 
 /// Panel that loads and displays metric charts for a run.
 class MetricsChartPanel extends ConsumerStatefulWidget {
@@ -104,16 +71,7 @@ class _MetricsChartPanelState extends ConsumerState<MetricsChartPanel> {
         historyKeyMetadata is Map
             ? historyKeyMetadata.cast<String, dynamic>()
             : const <String, dynamic>{};
-    final rankedKeys = [..._availableKeys];
-    rankedKeys.sort((a, b) {
-      final scoreComparison = _metricPriorityScore(
-        b,
-        historyKeyMap,
-      ).compareTo(_metricPriorityScore(a, historyKeyMap));
-      if (scoreComparison != 0) return scoreComparison;
-      return a.compareTo(b);
-    });
-    return rankedKeys.take(_defaultMetricSelectionLimit).toList();
+    return defaultMetricKeys(_availableKeys, historyKeyMap);
   }
 
   @override
@@ -485,10 +443,7 @@ class _MetricsChartPanelState extends ConsumerState<MetricsChartPanel> {
   }
 
   String get _selectionSummary {
-    if (_selectedKeys.isEmpty) return 'No metrics selected';
-    final selected = _selectedKeys.toList(growable: false);
-    if (selected.length == 1) return selected.first;
-    return '${selected.first}, +${selected.length - 1} more';
+    return selectionSummary(_selectedKeys);
   }
 
   Widget _buildChartArea() {
@@ -519,15 +474,7 @@ class _MetricsChartPanelState extends ConsumerState<MetricsChartPanel> {
   }
 
   List<MetricSeries> get _selectedSeries {
-    final seriesByKey = {for (final series in _series) series.key: series};
-
-    return _selectedKeys
-        .map(
-          (key) =>
-              seriesByKey[key] ??
-              MetricSeries(key: key, points: const <MetricPoint>[]),
-        )
-        .toList(growable: false);
+    return selectedSeriesWithFallback(_series, _selectedKeys);
   }
 
   void _updateRule(String key, MetricChartRule rule) {
@@ -649,49 +596,4 @@ class _DiagnosticSection extends StatelessWidget {
       ),
     );
   }
-}
-
-int _metricPriorityScore(String key, Map<String, dynamic> historyKeyMap) {
-  final lowerKey = key.toLowerCase();
-  var score = 0;
-
-  if (_defaultMetricPrefixes.any(lowerKey.startsWith)) {
-    score += 500;
-  }
-
-  if (_deprioritizedMetricPrefixes.any(lowerKey.startsWith)) {
-    score -= 350;
-  }
-
-  if (_headlineMetricTokens.any(lowerKey.contains)) {
-    score += 350;
-  } else if (_supportingMetricTokens.any(lowerKey.contains)) {
-    score += 180;
-  }
-
-  if (_deprioritizedMetricTokens.any(lowerKey.contains)) {
-    score -= 275;
-  }
-
-  score += _historyPointCountForKey(key, historyKeyMap) ~/ 200;
-  return score;
-}
-
-int _historyPointCountForKey(String key, Map<String, dynamic> historyKeyMap) {
-  final entry = historyKeyMap[key];
-  if (entry is! Map) return 0;
-
-  final typeCounts = entry['typeCounts'];
-  if (typeCounts is! List) return 0;
-
-  var count = 0;
-  for (final typeCount in typeCounts) {
-    if (typeCount is! Map) continue;
-    if (typeCount['type'] != 'number') continue;
-    final rawCount = typeCount['count'];
-    if (rawCount is num) {
-      count += rawCount.toInt();
-    }
-  }
-  return count;
 }

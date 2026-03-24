@@ -304,6 +304,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    await tester.tap(find.byTooltip('Show selector'));
+    await tester.pumpAndSettle();
+
     expect(find.text('train'), findsWidgets);
     expect(find.text('flow_matching_loss'), findsOneWidget);
     expect(find.text('future_latent_loss'), findsOneWidget);

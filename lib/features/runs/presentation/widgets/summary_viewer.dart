@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../../core/utils/format_utils.dart';
+import 'value_presentation.dart';
 
 /// Table displaying summary metrics for a run.
 class SummaryViewer extends StatefulWidget {
@@ -14,6 +16,23 @@ class SummaryViewer extends StatefulWidget {
 class _SummaryViewerState extends State<SummaryViewer> {
   String _searchQuery = '';
   final _searchController = TextEditingController();
+
+  Future<void> _copyText(String value) async {
+    await Clipboard.setData(ClipboardData(text: value));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Copied value')),
+    );
+  }
+
+  Future<void> _copyValue(dynamic value) async {
+    final presentation = ValuePresentation.fromValue(value);
+    await Clipboard.setData(ClipboardData(text: presentation.fullText));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Copied value')),
+    );
+  }
 
   @override
   void dispose() {
@@ -62,7 +81,8 @@ class _SummaryViewerState extends State<SummaryViewer> {
               controller: _searchController,
               decoration: InputDecoration(
                 hintText: 'Filter metrics...',
-                prefixIcon: const Icon(Icons.search, size: 20),
+                hintStyle: const TextStyle(fontSize: 11),
+                prefixIcon: const Icon(Icons.search, size: 14),
                 suffixIcon:
                     _searchQuery.isNotEmpty
                         ? IconButton(
@@ -74,7 +94,8 @@ class _SummaryViewerState extends State<SummaryViewer> {
                         )
                         : null,
                 isDense: true,
-                contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                constraints: const BoxConstraints(minHeight: 34),
+                contentPadding: const EdgeInsets.symmetric(vertical: 4),
               ),
               onChanged: (v) => setState(() => _searchQuery = v),
             ),
@@ -85,23 +106,37 @@ class _SummaryViewerState extends State<SummaryViewer> {
                     children: [
                       Expanded(
                         flex: 2,
-                        child: Text(
-                          e.key,
-                          style: const TextStyle(
-                            color: Colors.white54,
-                            fontSize: 13,
+                        child: InkWell(
+                          onTap: () => _copyText(e.key),
+                          borderRadius: BorderRadius.circular(6),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 2),
+                            child: Text(
+                              e.key,
+                              style: const TextStyle(
+                                color: Colors.white54,
+                                fontSize: 13,
+                              ),
+                            ),
                           ),
                         ),
                       ),
                       Expanded(
                         flex: 3,
-                        child: Text(
-                          formatMetricValue(e.value),
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontFamily: 'JetBrains Mono',
-                            fontWeight: FontWeight.w500,
-                            color: Theme.of(context).colorScheme.primary,
+                        child: InkWell(
+                          onTap: () => _copyValue(e.value),
+                          borderRadius: BorderRadius.circular(6),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 2),
+                            child: Text(
+                              formatMetricValue(e.value),
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontFamily: 'JetBrains Mono',
+                                fontWeight: FontWeight.w500,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                            ),
                           ),
                         ),
                       ),

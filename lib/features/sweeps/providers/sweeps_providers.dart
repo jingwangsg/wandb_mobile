@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/models/paginated.dart';
+import '../../../core/models/resource_refs.dart';
 import '../../../core/models/sweep.dart';
 import '../../auth/providers/auth_providers.dart';
 import '../data/sweeps_repository.dart';
@@ -10,11 +11,13 @@ final sweepsRepositoryProvider = Provider<SweepsRepository>((ref) {
   return SweepsRepository(client);
 });
 
-/// Provider key: "entity/project"
-final sweepsProvider = FutureProvider.family<PaginatedResult<WandbSweep>, String>(
-  (ref, projectPath) async {
-    final parts = projectPath.split('/');
+final sweepsProvider =
+    FutureProvider.family<PaginatedResult<WandbSweep>, ProjectRef>(
+  (ref, projectRef) async {
     final repo = ref.watch(sweepsRepositoryProvider);
-    return repo.getSweeps(entity: parts[0], project: parts[1]);
+    return repo.getSweeps(
+      entity: projectRef.entity,
+      project: projectRef.project,
+    );
   },
 );

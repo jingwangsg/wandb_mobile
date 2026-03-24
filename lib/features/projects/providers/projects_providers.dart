@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/models/paginated.dart';
 import '../../../core/models/project.dart';
+import '../../../core/providers/paginated_async_notifier.dart';
 import '../../auth/providers/auth_providers.dart';
 import '../data/projects_repository.dart';
 
@@ -11,42 +12,19 @@ final projectsRepositoryProvider = Provider<ProjectsRepository>((ref) {
 });
 
 /// Paginated project list for the current entity.
-class ProjectsNotifier
-    extends StateNotifier<AsyncValue<PaginatedResult<WandbProject>>> {
+class ProjectsNotifier extends PaginatedAsyncNotifier<WandbProject> {
   ProjectsNotifier(this._repo, this._entity)
-      : super(const AsyncValue.loading()) {
+      : super() {
     load();
   }
 
   final ProjectsRepository _repo;
   final String _entity;
 
-  Future<void> load() async {
-    state = const AsyncValue.loading();
-    try {
-      final result = await _repo.getProjects(entity: _entity);
-      state = AsyncValue.data(result);
-    } catch (e, st) {
-      state = AsyncValue.error(e, st);
-    }
+  @override
+  Future<PaginatedResult<WandbProject>> loadPage({String? cursor}) {
+    return _repo.getProjects(entity: _entity, cursor: cursor);
   }
-
-  Future<void> loadMore() async {
-    final current = state.valueOrNull;
-    if (current == null || !current.hasNextPage) return;
-
-    try {
-      final next = await _repo.getProjects(
-        entity: _entity,
-        cursor: current.endCursor,
-      );
-      state = AsyncValue.data(current.appendPage(next));
-    } catch (e, st) {
-      state = AsyncValue.error(e, st);
-    }
-  }
-
-  Future<void> refresh() => load();
 }
 
 final projectsProvider = StateNotifierProvider.family<ProjectsNotifier,

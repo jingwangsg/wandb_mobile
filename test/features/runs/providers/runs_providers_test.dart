@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:wandb_mobile/core/api/graphql_client.dart';
 import 'package:wandb_mobile/core/models/paginated.dart';
+import 'package:wandb_mobile/core/models/resource_refs.dart';
 import 'package:wandb_mobile/core/models/run.dart';
 import 'package:wandb_mobile/features/runs/data/runs_repository.dart';
 import 'package:wandb_mobile/features/runs/providers/runs_providers.dart';
@@ -35,8 +36,8 @@ void main() {
     );
     addTearDown(container.dispose);
 
-    const projectPath = 'entity/project';
-    final notifier = container.read(runFiltersProvider(projectPath).notifier);
+    const projectRef = ProjectRef(entity: 'entity', project: 'project');
+    final notifier = container.read(runFiltersProvider(projectRef).notifier);
     notifier.setOrder('-heartbeat_at');
     notifier.setSearchQuery('baseline');
     notifier.applyAdvancedFilter(
@@ -59,7 +60,7 @@ void main() {
       ),
     );
 
-    final sub = container.listen(runsProvider(projectPath), (_, __) {});
+    final sub = container.listen(runsProvider(projectRef), (_, __) {});
     addTearDown(sub.close);
 
     await Future<void>.delayed(Duration.zero);
@@ -79,5 +80,21 @@ void main() {
         },
       ],
     });
+  });
+
+  test('ProjectRef.fromPath parses valid project path', () {
+    final ref = ProjectRef.fromPath('entity/project');
+
+    expect(ref.entity, 'entity');
+    expect(ref.project, 'project');
+    expect(ref.path, 'entity/project');
+  });
+
+  test('ProjectRef.fromPath rejects invalid project path', () {
+    expect(() => ProjectRef.fromPath('entity'), throwsArgumentError);
+    expect(
+      () => ProjectRef.fromPath('entity/project/extra'),
+      throwsArgumentError,
+    );
   });
 }

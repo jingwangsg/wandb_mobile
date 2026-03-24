@@ -21,6 +21,7 @@ class SecureStorageService {
   Future<String?> getBaseUrl() => _storage.read(key: _baseUrlKey);
   Future<void> setBaseUrl(String url) =>
       _storage.write(key: _baseUrlKey, value: url);
+  Future<void> deleteBaseUrl() => _storage.delete(key: _baseUrlKey);
 
   Future<void> clearAll() => _storage.deleteAll();
 }

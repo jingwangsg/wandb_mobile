@@ -1,6 +1,9 @@
 import 'dart:convert';
 
+import 'value_presentation.dart';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/rendering.dart';
 
 /// Collapsible key-value tree for run config.
@@ -75,7 +78,8 @@ class _ConfigViewerState extends State<ConfigViewer> {
                 controller: _searchController,
                 decoration: InputDecoration(
                   hintText: 'Filter keys...',
-                  prefixIcon: const Icon(Icons.search, size: 20),
+                  hintStyle: const TextStyle(fontSize: 11),
+                  prefixIcon: const Icon(Icons.search, size: 14),
                   suffixIcon:
                       _searchQuery.isNotEmpty
                           ? IconButton(
@@ -87,7 +91,8 @@ class _ConfigViewerState extends State<ConfigViewer> {
                           )
                           : null,
                   isDense: true,
-                  contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                  constraints: const BoxConstraints(minHeight: 34),
+                  contentPadding: const EdgeInsets.symmetric(vertical: 4),
                 ),
                 onChanged: (v) => setState(() => _searchQuery = v),
               ),
@@ -126,9 +131,25 @@ class _ConfigRow extends StatefulWidget {
 class _ConfigRowState extends State<_ConfigRow> {
   bool _hovered = false;
 
+  Future<void> _copyText(String value) async {
+    await Clipboard.setData(ClipboardData(text: value));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Copied value')),
+    );
+  }
+
+  Future<void> _copyValue(String value) async {
+    await Clipboard.setData(ClipboardData(text: value));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Copied value')),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final presentation = _ConfigValuePresentation.fromValue(widget.value);
+    final presentation = ValuePresentation.fromValue(widget.value);
     final mouseConnected =
         RendererBinding.instance.mouseTracker.mouseIsConnected;
     final showExpandButton =
@@ -144,12 +165,19 @@ class _ConfigRowState extends State<_ConfigRow> {
           children: [
             Expanded(
               flex: 2,
-              child: Text(
-                widget.keyName,
-                style: const TextStyle(
-                  color: Colors.white54,
-                  fontSize: 13,
-                  fontFamily: 'JetBrains Mono',
+              child: InkWell(
+                onTap: () => _copyText(widget.keyName),
+                borderRadius: BorderRadius.circular(6),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Text(
+                    widget.keyName,
+                    style: const TextStyle(
+                      color: Colors.white54,
+                      fontSize: 13,
+                      fontFamily: 'JetBrains Mono',
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -159,15 +187,23 @@ class _ConfigRowState extends State<_ConfigRow> {
               child: Row(
                 children: [
                   Expanded(
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Text(
-                        presentation.inlineText,
-                        maxLines: 1,
-                        softWrap: false,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontFamily: 'JetBrains Mono',
+                    child: InkWell(
+                      key: ValueKey('config-value-${widget.keyName}'),
+                      onTap: () => _copyValue(presentation.fullText),
+                      borderRadius: BorderRadius.circular(6),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Text(
+                            presentation.inlineText,
+                            maxLines: 1,
+                            softWrap: false,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontFamily: 'JetBrains Mono',
+                            ),
+                          ),
                         ),
                       ),
                     ),
@@ -213,7 +249,7 @@ class _ConfigValueViewerPage extends StatelessWidget {
   });
 
   final String title;
-  final _ConfigValuePresentation presentation;
+  final ValuePresentation presentation;
 
   @override
   Widget build(BuildContext context) {
@@ -261,69 +297,6 @@ class _ConfigValueViewerPage extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-class _ConfigValuePresentation {
-  const _ConfigValuePresentation({
-    required this.inlineText,
-    required this.fullText,
-    required this.isJson,
-    required this.isExpandable,
-  });
-
-  final String inlineText;
-  final String fullText;
-  final bool isJson;
-  final bool isExpandable;
-
-  factory _ConfigValuePresentation.fromValue(dynamic value) {
-    final jsonValue = _tryJsonValue(value);
-    final isJson = jsonValue != null;
-    final fullText =
-        jsonValue != null
-            ? const JsonEncoder.withIndent('  ').convert(jsonValue)
-            : _stringify(value);
-    final inlineText = _inlinePreview(
-      isJson ? jsonEncode(jsonValue) : fullText,
-    );
-    final isExpandable =
-        isJson || fullText.length > 80 || fullText.contains('\n');
-
-    return _ConfigValuePresentation(
-      inlineText: inlineText,
-      fullText: fullText,
-      isJson: isJson,
-      isExpandable: isExpandable,
-    );
-  }
-
-  static Object? _tryJsonValue(dynamic value) {
-    if (value is Map || value is List) return value;
-    if (value is String) {
-      final trimmed = value.trim();
-      if (!(trimmed.startsWith('{') || trimmed.startsWith('['))) return null;
-      try {
-        final parsed = jsonDecode(trimmed);
-        if (parsed is Map || parsed is List) return parsed;
-      } catch (_) {
-        return null;
-      }
-    }
-    return null;
-  }
-
-  static String _stringify(dynamic value) {
-    if (value == null) return 'null';
-    return value.toString();
-  }
-
-  static String _inlinePreview(String text) {
-    return text
-        .replaceAll('\\', r'\\')
-        .replaceAll('\n', r'\n')
-        .replaceAll('\r', r'\r')
-        .replaceAll('\t', r'\t');
   }
 }
 

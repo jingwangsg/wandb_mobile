@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wandb_mobile/core/api/graphql_client.dart';
 import 'package:wandb_mobile/core/models/paginated.dart';
+import 'package:wandb_mobile/core/models/resource_refs.dart';
 import 'package:wandb_mobile/core/models/run.dart';
 import 'package:wandb_mobile/features/runs/data/runs_repository.dart';
 import 'package:wandb_mobile/features/runs/presentation/runs_list_screen.dart';
@@ -42,9 +43,8 @@ void main() {
     );
     addTearDown(container.dispose);
 
-    final notifier = container.read(
-      runFiltersProvider('entity/project').notifier,
-    );
+    const projectRef = ProjectRef(entity: 'entity', project: 'project');
+    final notifier = container.read(runFiltersProvider(projectRef).notifier);
     notifier.setSearchQuery('demo');
     notifier.applyAdvancedFilter(
       const RunFilterGroup(
