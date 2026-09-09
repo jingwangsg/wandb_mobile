@@ -39,7 +39,8 @@ query GetProjects($entity: String, $cursor: String, $perPage: Int = 50) {
         entityName
         createdAt
         runCount
-        isBenchmark
+        lastActive
+        starred
         description
         user {
           name
@@ -58,7 +59,8 @@ query GetProject($name: String!, $entity: String!) {
     name
     entityName
     createdAt
-    isBenchmark
+    lastActive
+    starred
     description
     user {
       name

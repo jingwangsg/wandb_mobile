@@ -3,76 +3,74 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/models/run.dart';
+import '../core/widgets/wandb_icon.dart';
+import '../features/aria/presentation/aria_screen.dart';
 import '../features/auth/presentation/login_screen.dart';
 import '../features/auth/providers/auth_providers.dart';
-import '../features/dashboard/presentation/dashboard_screen.dart';
+import '../features/notifications/presentation/notifications_screen.dart';
 import '../features/projects/presentation/projects_screen.dart';
+import '../features/runs/presentation/recent_runs_screen.dart';
 import '../features/runs/presentation/run_detail_screen.dart';
 import '../features/runs/presentation/runs_list_screen.dart';
 import '../features/settings/presentation/settings_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
-  final authStatus = ref.watch(authStatusProvider);
-
-  return GoRouter(
-    initialLocation: '/dashboard',
+  final status = ref.watch(authStatusProvider);
+  final router = GoRouter(
+    initialLocation: '/runs',
     redirect: (context, state) {
-      final isLoggedIn = authStatus == AuthStatus.authenticated;
-      final isLoginPage = state.matchedLocation == '/login';
-
-      if (!isLoggedIn && !isLoginPage) return '/login';
-      if (isLoggedIn && isLoginPage) return '/dashboard';
+      if (status != AuthStatus.authenticated &&
+          state.matchedLocation != '/login')
+        return '/login';
+      if (status == AuthStatus.authenticated &&
+          state.matchedLocation == '/login')
+        return '/runs';
       return null;
     },
     routes: [
-      GoRoute(
-        path: '/login',
-        builder: (context, state) => const LoginScreen(),
-      ),
+      GoRoute(path: '/login', builder: (_, _) => const LoginScreen()),
+      GoRoute(path: '/dashboard', redirect: (_, _) => '/runs'),
+      GoRoute(path: '/settings', redirect: (_, _) => '/profile'),
       StatefulShellRoute.indexedStack(
-        builder: (context, state, navigationShell) {
-          return _AppShell(navigationShell: navigationShell);
-        },
+        builder:
+            (context, state, shell) => _AppShell(
+              shell: shell,
+              showNavigation:
+                  state.uri.path.split('/').where((s) => s.isNotEmpty).length ==
+                  1,
+            ),
         branches: [
-          // Tab 0: Dashboard
           StatefulShellBranch(
             routes: [
               GoRoute(
-                path: '/dashboard',
-                builder: (context, state) => const DashboardScreen(),
+                path: '/runs',
+                builder: (_, _) => const RecentRunsScreen(),
               ),
             ],
           ),
-          // Tab 1: Projects
           StatefulShellBranch(
             routes: [
               GoRoute(
                 path: '/projects',
-                builder: (context, state) => const ProjectsScreen(),
+                builder: (_, _) => const ProjectsScreen(),
                 routes: [
                   GoRoute(
                     path: ':entity/:project',
-                    builder: (context, state) {
-                      final entity = state.pathParameters['entity']!;
-                      final project = state.pathParameters['project']!;
-                      return RunsListScreen(
-                          entity: entity, project: project);
-                    },
+                    builder:
+                        (_, state) => RunsListScreen(
+                          entity: state.pathParameters['entity']!,
+                          project: state.pathParameters['project']!,
+                        ),
                     routes: [
                       GoRoute(
                         path: 'runs/:runName',
-                        builder: (context, state) {
-                          final entity = state.pathParameters['entity']!;
-                          final project = state.pathParameters['project']!;
-                          final runName = state.pathParameters['runName']!;
-                          final run = state.extra as WandbRun?;
-                          return RunDetailScreen(
-                            entity: entity,
-                            project: project,
-                            runName: runName,
-                            run: run,
-                          );
-                        },
+                        builder:
+                            (_, state) => RunDetailScreen(
+                              entity: state.pathParameters['entity']!,
+                              project: state.pathParameters['project']!,
+                              runName: state.pathParameters['runName']!,
+                              run: state.extra as WandbRun?,
+                            ),
                       ),
                     ],
                   ),
@@ -80,12 +78,24 @@ final routerProvider = Provider<GoRouter>((ref) {
               ),
             ],
           ),
-          // Tab 2: Settings
+          StatefulShellBranch(
+            routes: [
+              GoRoute(path: '/aria', builder: (_, _) => const AriaScreen()),
+            ],
+          ),
           StatefulShellBranch(
             routes: [
               GoRoute(
-                path: '/settings',
-                builder: (context, state) => const SettingsScreen(),
+                path: '/notifications',
+                builder: (_, _) => const NotificationsScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/profile',
+                builder: (_, _) => const SettingsScreen(),
               ),
             ],
           ),
@@ -93,94 +103,135 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
     ],
   );
+  ref.onDispose(router.dispose);
+  return router;
 });
 
-/// Adaptive shell: BottomNavigationBar on narrow, NavigationRail on wide.
 class _AppShell extends StatelessWidget {
-  const _AppShell({required this.navigationShell});
-  final StatefulNavigationShell navigationShell;
-
-  void _onDestinationSelected(int index) {
-    navigationShell.goBranch(
-      index,
-      initialLocation: index == navigationShell.currentIndex,
-    );
-  }
+  const _AppShell({required this.shell, required this.showNavigation});
+  final StatefulNavigationShell shell;
+  final bool showNavigation;
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        // Wide screen: NavigationRail on the left
-        if (constraints.maxWidth >= 600) {
-          return Scaffold(
-            body: Row(
-              children: [
-                NavigationRail(
-                  selectedIndex: navigationShell.currentIndex,
-                  onDestinationSelected: _onDestinationSelected,
-                  labelType: NavigationRailLabelType.all,
-                  leading: const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 8),
-                    child: Text(
-                      'W&B',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w900,
-                        fontSize: 16,
+    final colors = Theme.of(context).colorScheme;
+    final selectedColor =
+        Theme.of(context).brightness == Brightness.dark
+            ? const Color(0xFF7ED2DE)
+            : const Color(0xFF337D8E);
+    return Scaffold(
+      body: shell,
+      bottomNavigationBar:
+          !showNavigation
+              ? null
+              : SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                  child: Container(
+                    padding: const EdgeInsets.all(5),
+                    decoration: BoxDecoration(
+                      color: colors.surface.withValues(alpha: 0.96),
+                      border: Border.all(
+                        color: colors.outlineVariant.withValues(alpha: 0.7),
                       ),
+                      borderRadius: BorderRadius.circular(40),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.08),
+                          blurRadius: 22,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        for (final (index, destination)
+                            in const [
+                              ('Runs', 'triangle_(right)', 'play_(filled)'),
+                              (
+                                'Projects',
+                                'folder_project',
+                                'folder_project_(filled)',
+                              ),
+                              ('ARIA', 'lightboard', 'lightboard_(filled)'),
+                              (
+                                'Notifications',
+                                'bell_notifications',
+                                'bell_notifications_(filled)',
+                              ),
+                              (
+                                'Profile',
+                                'user_profile_personal',
+                                'user_profile_personal_(filled)',
+                              ),
+                            ].indexed)
+                          Expanded(
+                            child: Semantics(
+                              selected: shell.currentIndex == index,
+                              button: true,
+                              label: destination.$1,
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(32),
+                                onTap:
+                                    () => shell.goBranch(
+                                      index,
+                                      initialLocation:
+                                          shell.currentIndex == index,
+                                    ),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 10,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color:
+                                        shell.currentIndex == index
+                                            ? colors.onSurface.withValues(
+                                              alpha: 0.07,
+                                            )
+                                            : null,
+                                    borderRadius: BorderRadius.circular(32),
+                                  ),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      WandbIcon(
+                                        shell.currentIndex == index
+                                            ? destination.$3
+                                            : destination.$2,
+                                        size: 23,
+                                        color:
+                                            shell.currentIndex == index
+                                                ? selectedColor
+                                                : colors.onSurface,
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        destination.$1,
+                                        maxLines: 1,
+                                        style: TextStyle(
+                                          fontSize: 10.5,
+                                          fontWeight:
+                                              shell.currentIndex == index
+                                                  ? FontWeight.w600
+                                                  : FontWeight.w400,
+                                          color:
+                                              shell.currentIndex == index
+                                                  ? selectedColor
+                                                  : colors.onSurface,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
-                  destinations: const [
-                    NavigationRailDestination(
-                      icon: Icon(Icons.dashboard_outlined),
-                      selectedIcon: Icon(Icons.dashboard),
-                      label: Text('Dashboard'),
-                    ),
-                    NavigationRailDestination(
-                      icon: Icon(Icons.folder_outlined),
-                      selectedIcon: Icon(Icons.folder),
-                      label: Text('Projects'),
-                    ),
-                    NavigationRailDestination(
-                      icon: Icon(Icons.settings_outlined),
-                      selectedIcon: Icon(Icons.settings),
-                      label: Text('Settings'),
-                    ),
-                  ],
                 ),
-                const VerticalDivider(width: 1, thickness: 1),
-                Expanded(child: navigationShell),
-              ],
-            ),
-          );
-        }
-
-        // Narrow screen: BottomNavigationBar
-        return Scaffold(
-          body: navigationShell,
-          bottomNavigationBar: NavigationBar(
-            selectedIndex: navigationShell.currentIndex,
-            onDestinationSelected: _onDestinationSelected,
-            destinations: const [
-              NavigationDestination(
-                icon: Icon(Icons.dashboard_outlined),
-                selectedIcon: Icon(Icons.dashboard),
-                label: 'Dashboard',
               ),
-              NavigationDestination(
-                icon: Icon(Icons.folder_outlined),
-                selectedIcon: Icon(Icons.folder),
-                label: 'Projects',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.settings_outlined),
-                selectedIcon: Icon(Icons.settings),
-                label: 'Settings',
-              ),
-            ],
-          ),
-        );
-      },
     );
   }
 }

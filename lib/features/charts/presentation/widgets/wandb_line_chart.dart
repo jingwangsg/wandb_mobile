@@ -6,12 +6,7 @@ import '../../../../core/theme/colors.dart';
 import '../../../../core/utils/downsampling.dart';
 import '../../../../core/utils/format_utils.dart';
 
-const _minimumTargetPoints = 120;
-const _fallbackTargetPoints = 300;
-
-/// Core Syncfusion line chart wrapper optimized for mobile interaction.
-/// Supports native pan/zoom gestures, trackball tooltip, multi-metric overlay.
-class WandbLineChart extends StatelessWidget {
+class WandbLineChart extends StatefulWidget {
   const WandbLineChart({
     super.key,
     required this.series,
@@ -23,6 +18,7 @@ class WandbLineChart extends StatelessWidget {
     this.xAxisMin,
     this.xAxisMax,
     this.showLegend = true,
+    this.logScale = false,
   });
 
   final List<MetricSeries> series;
@@ -34,174 +30,241 @@ class WandbLineChart extends StatelessWidget {
   final double? xAxisMin;
   final double? xAxisMax;
   final bool showLegend;
+  final bool logScale;
 
   @override
-  Widget build(BuildContext context) {
-    if (series.isEmpty || series.every((s) => s.isEmpty)) {
-      return const Center(child: Text('No data'));
-    }
+  State<WandbLineChart> createState() => _WandbLineChartState();
+}
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final wide = constraints.maxWidth >= 500;
-        final fontSize = wide ? 12.0 : 10.0;
-        final processedSeries = _processSeries(constraints.maxWidth);
+class _WandbLineChartState extends State<WandbLineChart> {
+  final _zoom = ZoomPanBehavior(
+    enablePinching: true,
+    enablePanning: true,
+    enableDoubleTapZooming: true,
+    zoomMode: ZoomMode.xy,
+    maximumZoomLevel: 0.01,
+  );
+  late TrackballBehavior _trackball;
 
-        return SfCartesianChart(
-          // Title
-          title:
-              title != null
-                  ? ChartTitle(
-                    text: title!,
-                    textStyle: const TextStyle(
-                      fontSize: 14,
-                      color: Colors.white70,
-                    ),
-                  )
-                  : const ChartTitle(text: ''),
-
-          // Background
-          plotAreaBackgroundColor: Colors.transparent,
-          plotAreaBorderColor: Colors.white10,
-          backgroundColor: Colors.transparent,
-
-          // ─── Gesture handling (core mobile UX) ─────────────
-          zoomPanBehavior: ZoomPanBehavior(
-            enablePinching: true, // Two-finger zoom
-            enablePanning: true, // One-finger pan (when zoomed)
-            enableDoubleTapZooming: true, // Double-tap to zoom in
-            zoomMode: ZoomMode.x, // X-axis zoom only (most useful)
-            enableSelectionZooming: false, // No box-select on mobile
-            maximumZoomLevel: 0.05, // Allow 20x zoom
-          ),
-
-          // ─── Trackball for data inspection (replaces web hover) ──
-          trackballBehavior: TrackballBehavior(
-            enable: true,
-            activationMode: ActivationMode.singleTap,
-            tooltipDisplayMode: TrackballDisplayMode.groupAllPoints,
-            lineType: TrackballLineType.vertical,
-            lineColor: Colors.white24,
-            markerSettings: const TrackballMarkerSettings(
-              markerVisibility: TrackballVisibilityMode.visible,
-              height: 8,
-              width: 8,
-              borderWidth: 2,
-              borderColor: Colors.white,
-            ),
-            tooltipSettings: const InteractiveTooltip(
-              color: Color(0xFF2A2A4A),
-              borderColor: Colors.white24,
-              borderWidth: 1,
-              textStyle: TextStyle(fontSize: 11, fontFamily: 'JetBrains Mono'),
-            ),
-          ),
-          onTrackballPositionChanging: (TrackballArgs args) {
-            final info = args.chartPointInfo;
-            final point = info.chartPoint;
-            if (point == null) return;
-            final xVal = point.x;
-            if (xVal is num) {
-              info.header = _formatXLabel(xVal, xAxisMode);
-            }
-            final yVal = point.y;
-            if (yVal == null) return;
-            final formatted = formatMetricValue(yVal);
-            info.label = series.length == 1
-                ? formatted
-                : '${info.seriesName ?? ''}: $formatted';
-          },
-
-          // ─── Legend (bottom on narrow, right on wide) ─────
-          legend: Legend(
-            isVisible: showLegend && processedSeries.length > 1,
-            position: wide ? LegendPosition.right : LegendPosition.bottom,
-            overflowMode: LegendItemOverflowMode.wrap,
-            textStyle: TextStyle(fontSize: fontSize, color: Colors.white70),
-          ),
-
-          // ─── Axes ──────────────────────────────────────────
-          primaryXAxis: NumericAxis(
-            minimum: xAxisMin,
-            maximum: xAxisMax,
-            title: AxisTitle(
-              text: xAxisMode.label,
-              textStyle: const TextStyle(fontSize: 11, color: Colors.white38),
-            ),
-            majorGridLines: const MajorGridLines(color: Colors.white10),
-            axisLine: const AxisLine(color: Colors.white24),
-            labelStyle: TextStyle(fontSize: fontSize, color: Colors.white38),
-            enableAutoIntervalOnZooming: true,
-          ),
-          primaryYAxis: NumericAxis(
-            minimum: yAxisMin,
-            maximum: yAxisMax,
-            majorGridLines: const MajorGridLines(color: Colors.white10),
-            axisLine: const AxisLine(color: Colors.white24),
-            labelStyle: TextStyle(fontSize: fontSize, color: Colors.white38),
-            anchorRangeToVisiblePoints: true, // Rescale Y when zoomed on X
-          ),
-
-          // ─── Series ────────────────────────────────────────
-          series:
-              processedSeries.asMap().entries.map((entry) {
-                final index = entry.key;
-                final s = entry.value;
-                final color =
-                    WandbColors.chartPalette[index %
-                        WandbColors.chartPalette.length];
-
-                return LineSeries<MetricPoint, num>(
-                  dataSource: s.points,
-                  xValueMapper: (point, _) => _xValue(point),
-                  yValueMapper: (point, _) => point.value,
-                  name: s.key,
-                  color: color,
-                  width: 2,
-                  animationDuration: 0, // No animation = snappier feel
-                  enableTooltip: true,
-                );
-              }).toList(),
-        );
-      },
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final colors = Theme.of(context).colorScheme;
+    _trackball = TrackballBehavior(
+      enable: true,
+      activationMode: ActivationMode.singleTap,
+      tooltipDisplayMode: TrackballDisplayMode.groupAllPoints,
+      lineType: TrackballLineType.vertical,
+      lineColor: colors.onSurfaceVariant,
+      tooltipSettings: InteractiveTooltip(
+        color: colors.inverseSurface,
+        textStyle: TextStyle(
+          fontSize: 12,
+          fontFamily: 'SourceSans3',
+          color: colors.onInverseSurface,
+        ),
+      ),
+      markerSettings: const TrackballMarkerSettings(
+        markerVisibility: TrackballVisibilityMode.visible,
+        height: 6,
+        width: 6,
+      ),
     );
   }
 
-  List<MetricSeries> _processSeries(double availableWidth) {
-    return series.map((entry) {
-      var points = lttbDownsample(
-        entry.points,
-        _targetPointCount(availableWidth, entry.points.length),
+  @override
+  void didUpdateWidget(WandbLineChart oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.xAxisMode != widget.xAxisMode ||
+        oldWidget.logScale != widget.logScale) {
+      _zoom.reset();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.series.isEmpty || widget.series.every((s) => s.isEmpty)) {
+      return const Center(child: Text('No data'));
+    }
+    if (widget.logScale &&
+        !widget.series.any(
+          (s) => s.points.any((p) => p.value.isFinite && p.value > 0),
+        )) {
+      return const Center(
+        child: Text(
+          'No positive values to plot on a log scale',
+          textAlign: TextAlign.center,
+        ),
       );
-      if (smoothing > 0) {
-        points = applySmoothing(points, smoothing);
-      }
-      return MetricSeries(key: entry.key, points: points);
-    }).toList();
-  }
-
-  int _targetPointCount(double availableWidth, int sourceLength) {
-    if (sourceLength <= _minimumTargetPoints) {
-      return sourceLength;
     }
-
-    final widthTarget =
-        availableWidth.isFinite && availableWidth > 0
-            ? availableWidth.round()
-            : _fallbackTargetPoints;
-
-    return widthTarget.clamp(_minimumTargetPoints, sourceLength).toInt();
-  }
-
-  num _xValue(MetricPoint point) {
-    switch (xAxisMode) {
-      case XAxisMode.step:
-        return point.step;
-      case XAxisMode.relativeTime:
-        return point.step;
-      case XAxisMode.wallClock:
-        return point.timestamp?.millisecondsSinceEpoch ?? point.step;
-    }
+    final colors = Theme.of(context).colorScheme;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final processed =
+            widget.series.map((series) {
+              final origin =
+                  series.points
+                      .where((p) => p.timestamp != null)
+                      .firstOrNull
+                      ?.timestamp;
+              var points =
+                  series.points
+                      .where((p) => p.value.isFinite && p.step.isFinite)
+                      .map(
+                        (point) => MetricPoint(
+                          step: switch (widget.xAxisMode) {
+                            XAxisMode.step => point.step,
+                            XAxisMode.relativeTime =>
+                              origin != null && point.timestamp != null
+                                  ? point.timestamp!
+                                          .difference(origin)
+                                          .inMilliseconds /
+                                      1000
+                                  : point.step,
+                            XAxisMode.wallClock =>
+                              point.timestamp?.millisecondsSinceEpoch ??
+                                  point.step,
+                          },
+                          value: point.value,
+                          timestamp: point.timestamp,
+                        ),
+                      )
+                      .toList();
+              points = timeWeightedSmoothing(points, widget.smoothing);
+              final target =
+                  constraints.maxWidth.isFinite
+                      ? constraints.maxWidth.round().clamp(120, 1200)
+                      : 300;
+              return MetricSeries(
+                key: series.key,
+                points: lttbDownsample(points, target),
+              );
+            }).toList();
+        return SfCartesianChart(
+          margin: const EdgeInsets.fromLTRB(4, 4, 8, 0),
+          title: ChartTitle(
+            text: widget.title ?? '',
+            textStyle: TextStyle(
+              color: colors.onSurface,
+              fontFamily: 'SourceSans3',
+            ),
+          ),
+          backgroundColor: Colors.transparent,
+          plotAreaBorderWidth: 0,
+          zoomPanBehavior: _zoom,
+          trackballBehavior: _trackball,
+          onTrackballPositionChanging: (args) {
+            final point = args.chartPointInfo.chartPoint;
+            if (point == null) return;
+            args.chartPointInfo.header =
+                widget.xAxisMode == XAxisMode.wallClock
+                    ? DateTime.fromMillisecondsSinceEpoch(
+                      (point.x as num).toInt(),
+                    ).toLocal().toString()
+                    : '${widget.xAxisMode.label} ${formatMetricValue(point.x)}';
+            final value = point.y;
+            if (value == null) return;
+            final label = value.toStringAsFixed(4);
+            args.chartPointInfo.label =
+                widget.series.length == 1
+                    ? label
+                    : '${args.chartPointInfo.seriesName}: $label';
+          },
+          legend: Legend(
+            isVisible: widget.showLegend && processed.length > 1,
+            position: LegendPosition.bottom,
+            overflowMode: LegendItemOverflowMode.scroll,
+            textStyle: TextStyle(
+              fontFamily: 'SourceSans3',
+              fontSize: 12,
+              color: colors.onSurfaceVariant,
+            ),
+          ),
+          primaryXAxis: NumericAxis(
+            minimum: widget.xAxisMin,
+            maximum: widget.xAxisMax,
+            majorGridLines: const MajorGridLines(width: 0),
+            majorTickLines: const MajorTickLines(size: 0),
+            axisLine: AxisLine(color: colors.outlineVariant),
+            labelStyle: TextStyle(
+              fontFamily: 'SourceSans3',
+              fontSize: 12,
+              color: colors.onSurfaceVariant,
+            ),
+            enableAutoIntervalOnZooming: true,
+          ),
+          primaryYAxis:
+              widget.logScale
+                  ? LogarithmicAxis(
+                    minimum:
+                        widget.yAxisMin != null && widget.yAxisMin! > 0
+                            ? widget.yAxisMin
+                            : null,
+                    maximum:
+                        widget.yAxisMax != null && widget.yAxisMax! > 0
+                            ? widget.yAxisMax
+                            : null,
+                    majorGridLines: MajorGridLines(
+                      color: colors.outlineVariant,
+                      width: 0.5,
+                    ),
+                    majorTickLines: const MajorTickLines(size: 0),
+                    axisLine: const AxisLine(width: 0),
+                    labelStyle: TextStyle(
+                      fontFamily: 'SourceSans3',
+                      fontSize: 12,
+                      color: colors.onSurfaceVariant,
+                    ),
+                  )
+                  : NumericAxis(
+                    minimum: widget.yAxisMin,
+                    maximum: widget.yAxisMax,
+                    anchorRangeToVisiblePoints: true,
+                    majorGridLines: MajorGridLines(
+                      color: colors.outlineVariant,
+                      width: 0.5,
+                    ),
+                    majorTickLines: const MajorTickLines(size: 0),
+                    axisLine: const AxisLine(width: 0),
+                    labelStyle: TextStyle(
+                      fontFamily: 'SourceSans3',
+                      fontSize: 12,
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+          series:
+              processed
+                  .asMap()
+                  .entries
+                  .map(
+                    (entry) => LineSeries<MetricPoint, num>(
+                      dataSource: entry.value.points,
+                      name: entry.value.key,
+                      xValueMapper: (point, _) => point.step,
+                      yValueMapper:
+                          (point, _) =>
+                              widget.logScale && point.value <= 0
+                                  ? null
+                                  : point.value,
+                      emptyPointSettings: const EmptyPointSettings(
+                        mode: EmptyPointMode.gap,
+                      ),
+                      color:
+                          WandbColors.chartPalette[entry.key %
+                              WandbColors.chartPalette.length],
+                      width: 1.6,
+                      animationDuration: 0,
+                      markerSettings: MarkerSettings(
+                        isVisible: entry.value.points.length == 1,
+                        width: 5,
+                        height: 5,
+                      ),
+                    ),
+                  )
+                  .toList(),
+        );
+      },
+    );
   }
 }
 
@@ -212,18 +275,4 @@ enum XAxisMode {
 
   const XAxisMode(this.label);
   final String label;
-}
-
-String _formatXLabel(num x, XAxisMode mode) {
-  switch (mode) {
-    case XAxisMode.step:
-      return 'Step ${x.toInt()}';
-    case XAxisMode.relativeTime:
-      return '${x.toStringAsFixed(1)}s';
-    case XAxisMode.wallClock:
-      final dt = DateTime.fromMillisecondsSinceEpoch(x.toInt());
-      return '${dt.hour.toString().padLeft(2, '0')}:'
-          '${dt.minute.toString().padLeft(2, '0')}:'
-          '${dt.second.toString().padLeft(2, '0')}';
-  }
 }

@@ -12,16 +12,18 @@ class GraphqlClient {
   GraphqlClient({
     required String apiKey,
     String baseUrl = 'https://api.wandb.ai',
-  }) : _dio = Dio(BaseOptions(
-          baseUrl: baseUrl,
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization':
-                'Basic ${base64Encode(utf8.encode('api:$apiKey'))}',
-          },
-          connectTimeout: const Duration(seconds: 15),
-          receiveTimeout: const Duration(seconds: 30),
-        )) {
+  }) : _dio = Dio(
+         BaseOptions(
+           baseUrl: baseUrl,
+           headers: {
+             'Content-Type': 'application/json',
+             'Authorization':
+                 'Basic ${base64Encode(utf8.encode('api:$apiKey'))}',
+           },
+           connectTimeout: const Duration(seconds: 15),
+           receiveTimeout: const Duration(seconds: 30),
+         ),
+       ) {
     _dio.interceptors.add(_RetryInterceptor(_dio));
   }
 
@@ -48,6 +50,9 @@ class GraphqlClient {
 
       final response = await _dio.post<Map<String, dynamic>>(
         '/graphql',
+        options: Options(
+          extra: {'mutation': queryString.trimLeft().startsWith('mutation')},
+        ),
         data: {
           'query': queryString,
           if (variables != null) 'variables': variables,
@@ -58,8 +63,7 @@ class GraphqlClient {
 
       // Check for GraphQL-level errors
       if (body.containsKey('errors')) {
-        final errors = (body['errors'] as List)
-            .cast<Map<String, dynamic>>();
+        final errors = (body['errors'] as List).cast<Map<String, dynamic>>();
         if (errors.isNotEmpty) {
           RuntimeDiagnostics.instance.record(
             'graphql_error',
@@ -70,7 +74,10 @@ class GraphqlClient {
               'errors': errors,
             },
           );
-          throw GraphQLException(errors, errors.first['message'] as String? ?? 'Unknown GraphQL error');
+          throw GraphQLException(
+            errors,
+            errors.first['message'] as String? ?? 'Unknown GraphQL error',
+          );
         }
       }
 
@@ -96,8 +103,7 @@ class GraphqlClient {
           if (variables != null) 'variables': variables,
           'statusCode': e.response?.statusCode,
           'type': e.type.name,
-          if (e.response?.data != null)
-            'response': e.response?.data.toString(),
+          if (e.response?.data != null) 'response': e.response?.data.toString(),
         },
         stackTrace: st,
       );
@@ -132,9 +138,10 @@ class GraphqlClient {
       case 429:
         final retryAfter = e.response?.headers.value('retry-after');
         return RateLimitException(
-          retryAfter: retryAfter != null
-              ? Duration(seconds: int.tryParse(retryAfter) ?? 30)
-              : const Duration(seconds: 30),
+          retryAfter:
+              retryAfter != null
+                  ? Duration(seconds: int.tryParse(retryAfter) ?? 30)
+                  : const Duration(seconds: 30),
         );
       case final code when code != null && code >= 500:
         return ServerException('Server error: $statusCode');
@@ -195,7 +202,8 @@ class _RetryInterceptor extends Interceptor {
   void onError(DioException err, ErrorInterceptorHandler handler) async {
     final statusCode = err.response?.statusCode;
     final shouldRetry =
-        statusCode == 429 || (statusCode != null && statusCode >= 500);
+        err.requestOptions.extra['mutation'] != true &&
+        (statusCode == 429 || (statusCode != null && statusCode >= 500));
 
     if (!shouldRetry) {
       handler.next(err);
@@ -213,9 +221,12 @@ class _RetryInterceptor extends Interceptor {
 
     // Respect Retry-After header on 429
     final retryAfterHeader = err.response?.headers.value('retry-after');
-    final actualDelay = retryAfterHeader != null
-        ? Duration(seconds: int.tryParse(retryAfterHeader) ?? delay.inSeconds)
-        : delay;
+    final actualDelay =
+        retryAfterHeader != null
+            ? Duration(
+              seconds: int.tryParse(retryAfterHeader) ?? delay.inSeconds,
+            )
+            : delay;
 
     await Future<void>.delayed(actualDelay);
 

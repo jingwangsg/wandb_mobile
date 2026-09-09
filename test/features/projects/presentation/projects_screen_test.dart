@@ -9,6 +9,7 @@ import 'package:wandb_mobile/features/auth/providers/auth_providers.dart';
 import 'package:wandb_mobile/features/projects/data/projects_repository.dart';
 import 'package:wandb_mobile/features/projects/presentation/projects_screen.dart';
 import 'package:wandb_mobile/features/projects/providers/projects_providers.dart';
+import '../../../test_support/mobile_test_support.dart';
 
 class FakeProjectsRepository extends ProjectsRepository {
   FakeProjectsRepository(this._result) : super(GraphqlClient(apiKey: 'test'));
@@ -38,6 +39,7 @@ final _project = WandbProject(
 Widget _buildProjectsScreen(FakeProjectsRepository repository) {
   return ProviderScope(
     overrides: [
+      ...mobileTestOverrides(),
       projectsRepositoryProvider.overrideWithValue(repository),
       currentEntityProvider.overrideWith((ref) => 'nv-gear'),
     ],
@@ -69,14 +71,14 @@ Future<void> _pumpProjectsScreen(
 }
 
 void main() {
-  testWidgets('renders project cards in grid mode without overflow', (
+  testWidgets('renders reference project list on a wide Android viewport', (
     tester,
   ) async {
     await _pumpProjectsScreen(tester, size: const Size(700, 800));
 
-    expect(find.byType(GridView), findsOneWidget);
+    expect(find.byType(ListView), findsOneWidget);
     expect(find.text('demo-project'), findsOneWidget);
-    expect(find.text('12 runs'), findsOneWidget);
+    expect(find.byTooltip('Star project'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -87,7 +89,7 @@ void main() {
 
     expect(find.byType(ListView), findsOneWidget);
     expect(find.text('demo-project'), findsOneWidget);
-    expect(find.text('12 runs'), findsOneWidget);
+    expect(find.byTooltip('Star project'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

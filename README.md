@@ -1,128 +1,95 @@
-<p align="center">
-  <img src="https://raw.githubusercontent.com/wandb/assets/main/wandb-dots-logo.svg" alt="W&B Logo" width="80" />
-</p>
+# WandbMobile for Android
 
-<h1 align="center">WandbMobile</h1>
+A Flutter client for Weights & Biases. The Android upgrade uses the official
+iOS app's inspected fonts, icons, navigation, and documented interactions.
+It is not an official W&B release. Current-version pixel equivalence has not
+been verified; see [reference and acceptance notes](docs/android-upgrade.md).
 
-<p align="center">
-  <strong>A native mobile client for <a href="https://wandb.ai">Weights & Biases</a></strong><br/>
-  Monitor your ML experiments from anywhere.
-</p>
+## Implemented workflows
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Flutter-3.7+-02569B?logo=flutter" alt="Flutter 3.7+" />
-  <img src="https://img.shields.io/badge/Dart-3.7+-0175C2?logo=dart" alt="Dart 3.7+" />
-  <img src="https://img.shields.io/badge/Platform-Android%20%7C%20iOS%20%7C%20macOS-brightgreen" alt="Platforms" />
-</p>
+- Five tabs: Runs, Projects, ARIA, Notifications, and Profile.
+- Personal/team project browsing, search, project stars, run visibility,
+  pagination, and automatic refresh.
+- Run Charts, Overview, and Logs; configuration, hardware metadata, files,
+  searchable/downloadable logs, and confirmed run termination.
+- Training charts from sampled history and hardware charts from system events.
+  Metric-name regex search, favorites, full-screen charts, zoom, trackballs,
+  TWEMA smoothing, logarithmic scale, and per-metric or scope-wide axis settings.
+- Image history with step selection and a full-screen gallery.
+- ARIA conversations using W&B's agent API, including history, continuation,
+  clarification questions, cancellation, feedback, and references. Availability
+  depends on the account. Dedicated-host credentials are not sent to SaaS ARIA.
+- Optional self-hosted webhook relay for failure and metric-change alerts,
+  delivered to opted-in Android devices using Firebase Cloud Messaging.
+- Light/dark appearance and account-scoped saved preferences.
 
----
+## Build and run
 
-## Features
+Verified toolchain: Flutter 3.47.2 / Dart 3.13.2, Java 17, Android SDK 36.
+Android is the supported release target; existing other-platform scaffolding
+is not part of this upgrade's acceptance.
 
-### Experiment Monitoring
-- **Project Browser** — Browse all projects across personal and team entities with search and pagination
-- **Run Dashboard** — View run state, duration, tags, config, and summary metrics at a glance
-- **Real-time Polling** — Active runs auto-refresh every 30 seconds
-
-### Interactive Charts
-- **Smart Metric Selection** — Automatically prioritizes headline metrics (loss, accuracy, f1) and groups by prefix (`train/`, `val/`, `eval/`)
-- **Native Gestures** — Pinch-to-zoom, pan, double-tap zoom, and trackball tooltip for data inspection
-- **Chart Customization** — Per-metric smoothing (EMA), custom Y-axis and X-axis bounds with auto/manual toggle
-- **Expandable Full-Screen View** — Tap any chart to expand with full rule editor
-- **LTTB Downsampling** — Largest Triangle Three Buckets algorithm preserves visual fidelity while keeping charts snappy
-
-### System Metrics
-- **Hardware Monitoring** — GPU utilization, CPU usage, memory, temperature, disk, and network metrics
-- **Smart Defaults** — Auto-selects the most relevant system metrics
-
-### Run Files
-- **Artifact Browser** — Browse and download run files (logs, checkpoints, model weights)
-- **File Metadata** — Size, type, modification date, and MD5 hash
-
-### Adaptive UI
-- **Phone** — Bottom navigation, single-column layout, bottom-sheet metric selector
-- **Tablet / Desktop** — Navigation rail, master-detail split, collapsible sidebar metric selector
-- **Responsive Grid** — 1 / 2 / 3 column layouts based on screen width
-
----
-
-## Architecture
-
-```
-lib/
-├── core/                          # Shared infrastructure
-│   ├── api/                       #   GraphQL client (Basic Auth + Dio)
-│   ├── models/                    #   Data models (Run, Project, MetricPoint, etc.)
-│   ├── providers/                 #   API client providers
-│   ├── diagnostics/               #   Runtime error logging (circular buffer -> disk)
-│   ├── utils/                     #   LTTB downsampling, formatting, responsive breakpoints
-│   ├── theme/                     #   W&B brand colors, Material themes
-│   └── widgets/                   #   Shared widgets (WandbMarkIcon)
-│
-├── features/                      # Feature modules (Clean Architecture)
-│   ├── auth/                      #   API key login, secure storage, entity switching
-│   ├── projects/                  #   Paginated project list with search
-│   ├── runs/                      #   Run list, run detail, metrics/system/files panels
-│   ├── charts/                    #   Chart preferences, rules, grouped chart area
-│   ├── sweeps/                    #   Hyperparameter sweep support
-│   ├── dashboard/                 #   Welcome screen
-│   └── settings/                  #   Account info, logout, diagnostics viewer
-│
-└── routing/                       # GoRouter with adaptive shell (tabs <-> rail)
-```
-
-**State Management** — [Riverpod](https://riverpod.dev) throughout (StateNotifier for auth, FutureProvider for async data, StateProvider for UI state)
-
-**Navigation** — [GoRouter](https://pub.dev/packages/go_router) with a 3-tab adaptive shell that switches between `BottomNavigationBar` and `NavigationRail` based on screen width
-
-**Charts** — [Syncfusion Flutter Charts](https://pub.dev/packages/syncfusion_flutter_charts) with custom trackball, zoom behavior, and per-metric axis rules
-
----
-
-## Getting Started
-
-### Prerequisites
-
-- Flutter SDK >= 3.7.0
-- A [Weights & Biases](https://wandb.ai) account and API key
-
-### Run
-
-```bash
-# Install dependencies
+```sh
 flutter pub get
-
-# Run on connected device or emulator
-flutter run
-
-# Build release APK
-flutter build apk --release
+flutter run --target=lib/main.dart
+flutter build apk --release --target=lib/main.dart
 ```
 
-### Login
+Sign in with your W&B API key. Dedicated Cloud accepts a custom W&B API URL.
+This client uses API-key login, not the official app's browser SSO flow.
+Keys are stored with Android secure storage and must not be compiled into an
+APK. The current release build uses the development signing key for previews;
+configure an operator-owned release key before distribution.
 
-1. Launch the app
-2. Paste your W&B API key (find it at [wandb.ai/authorize](https://wandb.ai/authorize))
-3. *(Optional)* Tap **Advanced** to set a custom API base URL for self-hosted instances
-4. Select your entity (personal or team)
+## Push deployment
 
----
+Monitoring works without Firebase configuration. Actual notifications require
+a Firebase project, a deployed HTTPS relay, and device notification permission.
+The relay requires a persistent SQLite volume and server-side Firebase
+credentials. Neither is supplied by the APK.
 
-## Key Dependencies
+See [the relay setup and security guide](server/README.md). Configure public
+client options in the ignored `config/android.json` using
+[the example](config/android.example.json), then build:
 
-| Category | Package | Purpose |
-|----------|---------|---------|
-| State | `flutter_riverpod` | Reactive state management |
-| Network | `dio` | HTTP client for GraphQL API |
-| Charts | `syncfusion_flutter_charts` | Interactive line charts |
-| Navigation | `go_router` | Declarative routing |
-| Storage | `flutter_secure_storage` | Encrypted credential storage |
-| Storage | `hive_flutter` | Local chart preferences |
-| UI | `google_fonts` | Typography |
-| UI | `shimmer` | Loading skeletons |
+```sh
+flutter build apk --release --target=lib/main.dart --dart-define-from-file=config/android.json
+```
 
----
+Do not copy a Firebase service-account private key into client configuration.
+Dedicated W&B installations require their own relay with matching host settings.
 
-<p align="center">
-  Built with Flutter & the W&B API
-</p>
+## Verification
+
+```sh
+flutter analyze
+flutter test
+cd server
+npm ci
+npm test
+npm audit
+node scripts/check-wandb-schema.mjs
+```
+
+The app tests exercise real UI/provider logic with strict API fixtures; the
+relay tests use its HTTP and SQLite paths with isolated external adapters.
+Neither proves production Firebase delivery. Review results, live read-only
+checks, APK provenance, and remaining external checks are recorded in
+[android-upgrade.md](docs/android-upgrade.md).
+
+An explicitly invoked live check reads the local user's `api.wandb.ai` entry
+from `~/.netrc` in memory and exercises read-only Flutter API paths against
+`nv-gear/gr00t2_pretrain/rz2hg2jr`. It writes counts, not credentials or training
+contents, to `build/review/live-api.json`:
+
+```sh
+flutter test tool/live_check_test.dart
+```
+
+## Code layout
+
+`lib/core` owns GraphQL, models, preferences, theme, and shared UI.
+`lib/features` contains authentication, projects, runs, charts, ARIA,
+notifications, and settings. Riverpod owns state; GoRouter owns navigation;
+Syncfusion renders interactive charts. `server/` contains the standalone push
+relay. Reference resource provenance and font licenses are under `assets/`.

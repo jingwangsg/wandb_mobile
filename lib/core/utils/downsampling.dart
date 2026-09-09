@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import '../models/metric_point.dart';
 
 /// Largest Triangle Three Buckets (LTTB) downsampling algorithm.
@@ -82,4 +84,27 @@ List<MetricPoint> applySmoothing(List<MetricPoint> data, double weight) {
     );
   }
   return smoothed;
+}
+
+/// Debiased TWEMA; normalize step distances so sampling density does not set the smoothing strength.
+List<MetricPoint> timeWeightedSmoothing(List<MetricPoint> data, double weight) {
+  if (weight <= 0 || data.length < 2) return data;
+  final range = (data.last.step - data.first.step).toDouble();
+  if (range <= 0) return data;
+  final smoothing = math.min(math.sqrt(weight.clamp(0, 0.99)), 0.999);
+  var last = 0.0;
+  var debias = 0.0;
+  return data.indexed.map((entry) {
+    final (index, point) = entry;
+    final previous = data[index == 0 ? 0 : index - 1];
+    final distance = math.max(0, (point.step - previous.step) / range * 1000);
+    final decay = math.pow(smoothing, distance).toDouble();
+    last = last * decay + point.value;
+    debias = debias * decay + 1;
+    return MetricPoint(
+      step: point.step,
+      value: last / debias,
+      timestamp: point.timestamp,
+    );
+  }).toList();
 }

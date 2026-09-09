@@ -6,15 +6,36 @@ import 'package:wandb_mobile/core/models/metric_point.dart';
 import 'package:wandb_mobile/core/models/paginated.dart';
 import 'package:wandb_mobile/core/models/run.dart';
 import 'package:wandb_mobile/core/models/run_file.dart';
+import 'package:wandb_mobile/core/models/run_log.dart';
 import 'package:wandb_mobile/features/charts/providers/chart_preferences_providers.dart';
 import 'package:wandb_mobile/features/runs/data/runs_repository.dart';
 import 'package:wandb_mobile/features/runs/presentation/run_detail_screen.dart';
 import 'package:wandb_mobile/features/runs/providers/runs_providers.dart';
 
 import '../../../test_support/in_memory_run_chart_preferences_store.dart';
+import '../../../test_support/mobile_test_support.dart';
 
 class RunDetailRepository extends RunsRepository {
   RunDetailRepository() : super(GraphqlClient(apiKey: 'test'));
+
+  @override
+  Future<RunLogPage> getLogs({
+    required String entity,
+    required String project,
+    required String runName,
+    String? before,
+    String? after,
+    int limit = 10000,
+  }) async => const RunLogPage(
+    lines: [RunLogLine(cursor: 'line-1', text: 'step=1 loss=0.5')],
+  );
+
+  @override
+  Future<WandbRun> getRun({
+    required String entity,
+    required String project,
+    required String runName,
+  }) async => _run;
 
   @override
   Future<List<MetricSeries>> getSampledHistory({
@@ -97,12 +118,13 @@ const _run = WandbRun(
 );
 
 void main() {
-  testWidgets('shows metrics, system, and files tabs in wide layout', (
+  testWidgets('shows charts, overview and searchable logs in Android detail', (
     tester,
   ) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          ...mobileTestOverrides(),
           runsRepositoryProvider.overrideWithValue(RunDetailRepository()),
           runChartPreferencesStoreProvider.overrideWithValue(
             InMemoryRunChartPreferencesStore(),
@@ -127,14 +149,16 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Metrics'), findsOneWidget);
+    expect(find.text('Charts'), findsOneWidget);
     expect(find.text('System'), findsOneWidget);
-    expect(find.text('Files'), findsOneWidget);
+    expect(find.text('Overview'), findsOneWidget);
+    expect(find.text('Logs'), findsOneWidget);
 
-    await tester.tap(find.text('Files'));
+    await tester.tap(find.text('Logs'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Run Files'), findsOneWidget);
-    expect(find.text('output.log'), findsOneWidget);
+    expect(find.text('Search logs'), findsOneWidget);
+    expect(find.text('step=1 loss=0.5'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 }

@@ -43,3 +43,9 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Deployment configuration and credentials
+/config/android.json
+/server/.env
+**/google-services.json
+**/*service-account*.json

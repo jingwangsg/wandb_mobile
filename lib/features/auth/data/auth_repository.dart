@@ -1,5 +1,6 @@
 import '../../../core/api/graphql_client.dart';
 import '../../../core/api/graphql_queries.dart';
+import '../../../core/api/api_exceptions.dart';
 import '../../../core/models/user.dart';
 
 class AuthRepository {
@@ -10,7 +11,8 @@ class AuthRepository {
   /// Returns the authenticated user on success, throws on failure.
   Future<WandbUser> validateApiKey() async {
     final data = await _client.query(WandbQueries.getViewer);
-    final viewer = data['viewer'] as Map<String, dynamic>;
+    final viewer = data['viewer'] as Map<String, dynamic>?;
+    if (viewer == null) throw const AuthenticationException();
     return WandbUser.fromJson(viewer);
   }
 }

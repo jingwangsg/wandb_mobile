@@ -8,6 +8,8 @@ class WandbProject {
     this.runCount = 0,
     this.isBenchmark = false,
     this.userName,
+    this.lastActive,
+    this.starred = false,
   });
 
   final String id;
@@ -18,6 +20,8 @@ class WandbProject {
   final int runCount;
   final bool isBenchmark;
   final String? userName;
+  final DateTime? lastActive;
+  final bool starred;
 
   factory WandbProject.fromJson(Map<String, dynamic> json) {
     return WandbProject(
@@ -32,6 +36,8 @@ class WandbProject {
       runCount: json['runCount'] as int? ?? 0,
       isBenchmark: json['isBenchmark'] as bool? ?? false,
       userName: (json['user'] as Map<String, dynamic>?)?['username'] as String?,
+      lastActive: DateTime.tryParse(json['lastActive'] as String? ?? ''),
+      starred: json['starred'] as bool? ?? false,
     );
   }
 

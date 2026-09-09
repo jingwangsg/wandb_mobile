@@ -1,6 +1,7 @@
 class MetricChartRule {
   const MetricChartRule({
     this.smoothing = 0,
+    this.logScale = false,
     this.useAutoMin = true,
     this.min,
     this.useAutoMax = true,
@@ -14,6 +15,7 @@ class MetricChartRule {
   static const defaults = MetricChartRule();
 
   final double smoothing;
+  final bool logScale;
   final bool useAutoMin;
   final double? min;
   final bool useAutoMax;
@@ -30,6 +32,7 @@ class MetricChartRule {
 
   MetricChartRule copyWith({
     double? smoothing,
+    bool? logScale,
     bool? useAutoMin,
     double? min,
     bool clearMin = false,
@@ -45,6 +48,7 @@ class MetricChartRule {
   }) {
     return MetricChartRule(
       smoothing: smoothing ?? this.smoothing,
+      logScale: logScale ?? this.logScale,
       useAutoMin: useAutoMin ?? this.useAutoMin,
       min: clearMin ? null : (min ?? this.min),
       useAutoMax: useAutoMax ?? this.useAutoMax,
@@ -59,6 +63,7 @@ class MetricChartRule {
   Map<String, dynamic> toJson() {
     return {
       'smoothing': smoothing,
+      'logScale': logScale,
       'useAutoMin': useAutoMin,
       'min': min,
       'useAutoMax': useAutoMax,
@@ -73,6 +78,7 @@ class MetricChartRule {
   factory MetricChartRule.fromJson(Map<String, dynamic> json) {
     return MetricChartRule(
       smoothing: (json['smoothing'] as num?)?.toDouble() ?? 0,
+      logScale: json['logScale'] as bool? ?? false,
       useAutoMin: json['useAutoMin'] as bool? ?? true,
       min: (json['min'] as num?)?.toDouble(),
       useAutoMax: json['useAutoMax'] as bool? ?? true,
@@ -89,6 +95,7 @@ class MetricChartRule {
     if (identical(this, other)) return true;
     return other is MetricChartRule &&
         other.smoothing == smoothing &&
+        other.logScale == logScale &&
         other.useAutoMin == useAutoMin &&
         other.min == min &&
         other.useAutoMax == useAutoMax &&
@@ -101,7 +108,15 @@ class MetricChartRule {
 
   @override
   int get hashCode => Object.hash(
-        smoothing, useAutoMin, min, useAutoMax, max,
-        useAutoXMin, xMin, useAutoXMax, xMax,
-      );
+    smoothing,
+    logScale,
+    useAutoMin,
+    min,
+    useAutoMax,
+    max,
+    useAutoXMin,
+    xMin,
+    useAutoXMax,
+    xMax,
+  );
 }

@@ -2,15 +2,122 @@ import 'dart:convert';
 
 import '../../../core/api/graphql_client.dart';
 import '../../../core/api/graphql_queries.dart';
+import '../../../core/api/mobile_queries.dart';
+import '../../../core/api/api_exceptions.dart';
 import '../../../core/models/metric_point.dart';
 import '../../../core/models/paginated.dart';
 import '../../../core/models/run.dart';
 import '../../../core/models/run_file.dart';
+import '../../../core/models/run_log.dart';
 
 class RunsRepository {
   const RunsRepository(this._client);
   final GraphqlClient _client;
   static const _chartAxisKeys = ['_step', '_timestamp'];
+
+  Future<WandbRun> getRun({
+    required String entity,
+    required String project,
+    required String runName,
+  }) async {
+    final data = await _client.query(
+      MobileQueries.run,
+      variables: {'entity': entity, 'project': project, 'run': runName},
+    );
+    final run = (data['project'] as Map?)?['run'] as Map<String, dynamic>?;
+    if (run == null) {
+      throw const NotFoundException('Run not found or access denied');
+    }
+    return WandbRun.fromJson(run);
+  }
+
+  Future<PaginatedResult<WandbRun>> getRecentRuns({
+    String? cursor,
+    String? pattern,
+  }) async {
+    final data = await _client.query(
+      MobileQueries.recentRuns,
+      variables: {'cursor': cursor, 'pattern': pattern},
+    );
+    final viewer = data['viewer'] as Map?;
+    if (viewer == null) throw const AuthenticationException();
+    final runs = viewer['runs'] as Map;
+    return PaginatedResult(
+      items:
+          (runs['edges'] as List)
+              .map(
+                (edge) =>
+                    WandbRun.fromJson(edge['node'] as Map<String, dynamic>),
+              )
+              .toList(),
+      endCursor: runs['pageInfo']['endCursor'] as String?,
+      hasNextPage: runs['pageInfo']['hasNextPage'] as bool,
+    );
+  }
+
+  Future<void> stopRun(String id) async {
+    final data = await _client.query(
+      MobileQueries.stopRun,
+      variables: {'id': id},
+    );
+    if (data['stopRun']?['success'] != true) {
+      throw const ServerException('The run could not be stopped');
+    }
+  }
+
+  Future<Map<String, dynamic>> getProjectMetrics({
+    required String entity,
+    required String project,
+  }) async {
+    final data = await _client.query(
+      MobileQueries.projectMetrics,
+      variables: {'entity': entity, 'project': project},
+    );
+    final value = data['project']?['runs']?['historyKeys'];
+    if (value is String) return jsonDecode(value) as Map<String, dynamic>;
+    return Map<String, dynamic>.from(value as Map? ?? {});
+  }
+
+  Future<RunLogPage> getLogs({
+    required String entity,
+    required String project,
+    required String runName,
+    String? before,
+    String? after,
+    int limit = 10000,
+  }) async {
+    final data = await _client.query(
+      MobileQueries.logs,
+      variables: {
+        'entity': entity,
+        'project': project,
+        'run': runName,
+        'before': before,
+        'after': after,
+        if (after == null) 'last': limit else 'first': limit,
+      },
+    );
+    final logs = data['project']?['run']?['logLines'] as Map?;
+    if (logs == null) throw const NotFoundException('Run logs are unavailable');
+    final page = logs['pageInfo'] as Map;
+    return RunLogPage(
+      lines:
+          (logs['edges'] as List)
+              .map(
+                (edge) => RunLogLine(
+                  cursor: edge['cursor'] as String,
+                  text: edge['node']['line'] as String? ?? '',
+                  number: edge['node']['number'] as int?,
+                  timestamp: edge['node']['timestamp'] as String?,
+                ),
+              )
+              .toList(),
+      startCursor: page['startCursor'] as String?,
+      endCursor: page['endCursor'] as String?,
+      hasPreviousPage: page['hasPreviousPage'] as bool? ?? false,
+      hasNextPage: page['hasNextPage'] as bool? ?? false,
+    );
+  }
 
   /// List runs with optional filters and sorting.
   Future<PaginatedResult<WandbRun>> getRuns({
@@ -128,7 +235,28 @@ class RunsRepository {
     required int minStep,
     required int maxStep,
     int pageSize = 500,
+    List<String>? keys,
   }) async {
+    if (keys != null) {
+      final data = await _client.query(
+        WandbQueries.getSampledHistory,
+        variables: {
+          'entity': entity,
+          'project': project,
+          'run': runName,
+          'specs': [
+            jsonEncode({
+              'keys': ['_step', ...keys],
+              'minStep': minStep,
+              'maxStep': maxStep,
+              'samples': pageSize,
+            }),
+          ],
+        },
+      );
+      final history = data['project']['run']['sampledHistory'] as List;
+      return (history.first as List).map(_sampledHistoryRowAsMap).toList();
+    }
     final data = await _client.query(
       WandbQueries.getHistoryPage,
       variables: {

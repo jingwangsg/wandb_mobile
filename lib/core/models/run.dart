@@ -8,6 +8,7 @@ enum RunState {
   preempted,
   preempting,
   pending,
+  killed,
   unknown;
 
   static RunState fromString(String? s) {
@@ -19,7 +20,7 @@ enum RunState {
   }
 
   bool get isActive => this == running || this == preempting || this == pending;
-  bool get isTerminal => this == finished || this == failed || this == crashed;
+  bool get isTerminal => !isActive && this != unknown;
 }
 
 class WandbRun {
@@ -42,6 +43,9 @@ class WandbRun {
     this.userName,
     this.historyLineCount = 0,
     this.historyKeys,
+    this.entityName,
+    this.projectName,
+    this.readOnly = false,
   });
 
   final String id;
@@ -62,6 +66,9 @@ class WandbRun {
   final String? userName;
   final int historyLineCount;
   final Map<String, dynamic>? historyKeys;
+  final String? entityName;
+  final String? projectName;
+  final bool readOnly;
 
   factory WandbRun.fromJson(Map<String, dynamic> json) {
     return WandbRun(
@@ -76,18 +83,22 @@ class WandbRun {
       group: json['group'] as String?,
       jobType: json['jobType'] as String?,
       sweepName: json['sweepName'] as String?,
-      createdAt: json['createdAt'] != null
-          ? DateTime.tryParse(json['createdAt'] as String)
-          : null,
-      heartbeatAt: json['heartbeatAt'] != null
-          ? DateTime.tryParse(json['heartbeatAt'] as String)
-          : null,
+      createdAt:
+          json['createdAt'] != null
+              ? DateTime.tryParse(json['createdAt'] as String)
+              : null,
+      heartbeatAt:
+          json['heartbeatAt'] != null
+              ? DateTime.tryParse(json['heartbeatAt'] as String)
+              : null,
       description: json['description'] as String?,
       notes: json['notes'] as String?,
-      userName:
-          (json['user'] as Map<String, dynamic>?)?['username'] as String?,
+      userName: (json['user'] as Map<String, dynamic>?)?['username'] as String?,
       historyLineCount: json['historyLineCount'] as int? ?? 0,
       historyKeys: _parseJsonString(json['historyKeys']),
+      entityName: (json['project'] as Map?)?['entityName'] as String?,
+      projectName: (json['project'] as Map?)?['name'] as String?,
+      readOnly: json['readOnly'] as bool? ?? false,
     );
   }
 

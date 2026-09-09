@@ -3,18 +3,8 @@ import 'dart:math' as math;
 import '../../../core/models/metric_point.dart';
 
 const defaultMetricSelectionLimit = 3;
-const defaultMetricPrefixes = [
-  'train/',
-  'val/',
-  'valid/',
-  'eval/',
-  'test/',
-];
-const deprioritizedMetricPrefixes = [
-  'system/',
-  'slowest_rank/',
-  'straggler/',
-];
+const defaultMetricPrefixes = ['train/', 'val/', 'valid/', 'eval/', 'test/'];
+const deprioritizedMetricPrefixes = ['system/', 'slowest_rank/', 'straggler/'];
 const headlineMetricTokens = [
   'loss',
   'accuracy',
@@ -67,6 +57,9 @@ const systemDeprioritizedTokens = [
   'uncorrectedmemoryerrors',
 ];
 
+bool isSystemMetric(String key) =>
+    key.startsWith('system/') || key.startsWith('system.');
+
 List<String> defaultMetricKeys(
   List<String> availableKeys,
   Map<String, dynamic> historyKeyMap,
@@ -107,7 +100,8 @@ int metricPriorityScore(String key, Map<String, dynamic> historyKeyMap) {
     score -= 275;
   }
 
-  score += historyPointCountForKey(key, historyKeyMap) ~/ 200;
+  // Logging frequency must not make counters outrank loss/accuracy metrics.
+  score += (historyPointCountForKey(key, historyKeyMap) ~/ 200).clamp(0, 100);
   return score;
 }
 
@@ -132,8 +126,9 @@ int historyPointCountForKey(String key, Map<String, dynamic> historyKeyMap) {
 
 List<String> defaultSystemKeys(List<String> availableKeys) {
   final rankedKeys = [...availableKeys]..sort((a, b) {
-    final scoreComparison =
-        systemMetricPriorityScore(b).compareTo(systemMetricPriorityScore(a));
+    final scoreComparison = systemMetricPriorityScore(
+      b,
+    ).compareTo(systemMetricPriorityScore(a));
     if (scoreComparison != 0) {
       return scoreComparison;
     }
@@ -191,7 +186,8 @@ List<MetricSeries> selectedSeriesWithFallback(
   return selectedKeys
       .map(
         (key) =>
-            seriesByKey[key] ?? MetricSeries(key: key, points: const <MetricPoint>[]),
+            seriesByKey[key] ??
+            MetricSeries(key: key, points: const <MetricPoint>[]),
       )
       .toList(growable: false);
 }
@@ -200,26 +196,28 @@ List<MetricSeries> systemSeriesFromRows(
   Iterable<Map<String, Object?>> rows,
   Iterable<String> selectedKeys,
 ) {
-  return selectedKeys.map((key) {
-    final points = <MetricPoint>[];
-    for (final row in rows) {
-      final metrics = row['metrics'];
-      if (metrics is! Map<String, double>) continue;
-      final value = metrics[key];
-      if (value == null) {
-        continue;
-      }
-      final step = row['step'];
-      final timestamp = row['timestamp'];
-      if (step is! num) continue;
-      points.add(
-        MetricPoint(
-          step: step,
-          value: value,
-          timestamp: timestamp is DateTime ? timestamp : null,
-        ),
-      );
-    }
-    return MetricSeries(key: key, points: points);
-  }).toList(growable: false);
+  return selectedKeys
+      .map((key) {
+        final points = <MetricPoint>[];
+        for (final row in rows) {
+          final metrics = row['metrics'];
+          if (metrics is! Map<String, double>) continue;
+          final value = metrics[key];
+          if (value == null) {
+            continue;
+          }
+          final step = row['step'];
+          final timestamp = row['timestamp'];
+          if (step is! num) continue;
+          points.add(
+            MetricPoint(
+              step: step,
+              value: value,
+              timestamp: timestamp is DateTime ? timestamp : null,
+            ),
+          );
+        }
+        return MetricSeries(key: key, points: points);
+      })
+      .toList(growable: false);
 }

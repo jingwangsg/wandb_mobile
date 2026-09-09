@@ -8,6 +8,7 @@ import 'package:wandb_mobile/core/models/run.dart';
 import 'package:wandb_mobile/features/runs/data/runs_repository.dart';
 import 'package:wandb_mobile/features/runs/presentation/runs_list_screen.dart';
 import 'package:wandb_mobile/features/runs/providers/runs_providers.dart';
+import '../../../test_support/mobile_test_support.dart';
 
 class StaticRunsRepository extends RunsRepository {
   StaticRunsRepository() : super(GraphqlClient(apiKey: 'test'));
@@ -38,6 +39,7 @@ void main() {
   testWidgets('shows search chip and advanced filter summary', (tester) async {
     final container = ProviderContainer(
       overrides: [
+        ...mobileTestOverrides(),
         runsRepositoryProvider.overrideWithValue(StaticRunsRepository()),
       ],
     );

@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
-import '../../../core/theme/colors.dart';
+import '../../../core/app_configuration.dart';
+import '../../../core/providers/mobile_preferences.dart';
+import '../../../core/widgets/mobile_controls.dart';
+import '../../../core/widgets/wandb_icon.dart';
 import '../../auth/providers/auth_providers.dart';
+import '../../notifications/data/push_service.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -10,145 +15,201 @@ class SettingsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final auth = ref.watch(authProvider);
-
+    final preferences = ref.watch(mobilePreferencesProvider);
+    final push = ref.watch(pushServiceProvider);
+    final username = auth.user?.username ?? '';
     return Scaffold(
-      appBar: AppBar(title: const Text('Settings')),
+      appBar: AppBar(title: const Text('Profile')),
       body: ListView(
+        padding: const EdgeInsets.all(16),
         children: [
-          // Account section
-          _SectionHeader('Account'),
-          ListTile(
-            leading: CircleAvatar(
-              backgroundColor: WandbColors.yellow,
-              child: Text(
-                (auth.user?.username ?? '?')[0].toUpperCase(),
-                style: const TextStyle(
-                    color: Colors.black, fontWeight: FontWeight.bold),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 26,
+                    child: Text(
+                      username.isEmpty ? '?' : username[0].toUpperCase(),
+                      style: const TextStyle(fontSize: 24),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          auth.user?.name ?? username,
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                        Text(
+                          auth.user?.email ?? username,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
-            title: Text(auth.user?.username ?? 'Unknown'),
-            subtitle: Text(auth.user?.email ?? ''),
           ),
-          ListTile(
-            leading: const Icon(Icons.business),
-            title: const Text('Entity'),
-            subtitle: Text(auth.entity),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => _showEntityPicker(context, ref),
+          const SizedBox(height: 24),
+          Text('Account', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          Card(
+            child: ListTile(
+              leading: const WandbIcon('organization_corporate'),
+              title: Text(auth.entity),
+              subtitle: Text(
+                auth.entity == auth.user?.entity ? 'Personal' : 'Team',
+              ),
+              trailing: const WandbIcon('chevron_(next)', size: 18),
+              onTap:
+                  () => showModalBottomSheet<void>(
+                    context: context,
+                    isScrollControlled: true,
+                    useSafeArea: true,
+                    builder: (_) => const EntityPickerSheet(),
+                  ),
+            ),
           ),
-          const Divider(),
-
-          // Preferences
-          _SectionHeader('Preferences'),
-          SwitchListTile(
-            secondary: const Icon(Icons.dark_mode),
-            title: const Text('Dark Mode'),
-            subtitle: const Text('Currently always dark'),
-            value: true,
-            onChanged: null, // TODO: implement theme switching
+          const SizedBox(height: 24),
+          Text('Appearance', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          SegmentedButton<ThemeMode>(
+            segments: const [
+              ButtonSegment(value: ThemeMode.system, label: Text('Automatic')),
+              ButtonSegment(value: ThemeMode.light, label: Text('Light')),
+              ButtonSegment(value: ThemeMode.dark, label: Text('Dark')),
+            ],
+            selected: {preferences.theme},
+            onSelectionChanged: (selection) async {
+              try {
+                await ref
+                    .read(mobilePreferencesProvider.notifier)
+                    .setTheme(selection.single);
+              } catch (error) {
+                if (context.mounted)
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Unable to save appearance: $error'),
+                    ),
+                  );
+              }
+            },
           ),
-          const Divider(),
-
-          // Cache
-          _SectionHeader('Data'),
-          ListTile(
-            leading: const Icon(Icons.cached),
-            title: const Text('Clear Cache'),
-            subtitle: const Text('Remove all cached data'),
-            onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Cache cleared')),
+          const SizedBox(height: 24),
+          Text('Notifications', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          Card(
+            child: SwitchListTile.adaptive(
+              secondary: const WandbIcon('bell_notifications'),
+              title: const Text('Push notifications'),
+              subtitle: Text(
+                !AppConfiguration.pushConfigured
+                    ? 'Unavailable in this build'
+                    : push.hasError
+                    ? '${push.error}'
+                    : 'Run failures and metric changes',
+              ),
+              value: push.valueOrNull ?? false,
+              onChanged:
+                  !AppConfiguration.pushConfigured || push.isLoading
+                      ? null
+                      : (enabled) async {
+                        try {
+                          final service = ref.read(
+                            pushServiceProvider.notifier,
+                          );
+                          if (enabled) {
+                            await service.enable();
+                          } else {
+                            await service.disable();
+                          }
+                        } catch (error) {
+                          if (context.mounted)
+                            ScaffoldMessenger.of(
+                              context,
+                            ).showSnackBar(SnackBar(content: Text('$error')));
+                        }
+                      },
+            ),
+          ),
+          const SizedBox(height: 24),
+          Card(
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const WandbIcon('help_(alt)'),
+                  title: const Text('Contact Support'),
+                  trailing: const WandbIcon('chevron_(next)', size: 18),
+                  onTap: () => launchUrl(Uri.parse('mailto:support@wandb.com')),
+                ),
+                const Divider(indent: 52),
+                ListTile(
+                  leading: const WandbIcon('info'),
+                  title: const Text('Licenses'),
+                  trailing: const WandbIcon('chevron_(next)', size: 18),
+                  onTap:
+                      () => showLicensePage(
+                        context: context,
+                        applicationName: 'W&B for Android',
+                        applicationVersion: '2.0.0',
+                      ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          OutlinedButton(
+            onPressed: () async {
+              final confirmed = await showDialog<bool>(
+                context: context,
+                builder:
+                    (dialog) => AlertDialog(
+                      title: const Text('Sign out?'),
+                      content: const Text(
+                        'Your API key will be removed from this device.',
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(dialog, false),
+                          child: const Text('Cancel'),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.pop(dialog, true),
+                          child: const Text('Sign out'),
+                        ),
+                      ],
+                    ),
               );
+              if (confirmed != true) return;
+              try {
+                await ref.read(pushServiceProvider.notifier).disable();
+              } catch (_) {
+                if (context.mounted)
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Notifications were disabled locally. The push service could not confirm removal.',
+                      ),
+                    ),
+                  );
+              } finally {
+                await ref.read(authProvider.notifier).logout();
+              }
             },
+            child: const Text('Sign out'),
           ),
-          const Divider(),
-
-          // About
-          _SectionHeader('About'),
-          const ListTile(
-            leading: Icon(Icons.info_outline),
-            title: Text('W&B Mobile'),
-            subtitle: Text('Version 1.0.0'),
-          ),
-          const Divider(),
-
-          // Logout
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: FilledButton.tonal(
-              onPressed: () => _confirmLogout(context, ref),
-              style: FilledButton.styleFrom(
-                foregroundColor: WandbColors.failed,
-              ),
-              child: const Text('Logout'),
-            ),
+          const SizedBox(height: 16),
+          Text(
+            'v2.0.0 (2)',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
-      ),
-    );
-  }
-
-  void _showEntityPicker(BuildContext context, WidgetRef ref) {
-    final auth = ref.read(authProvider);
-    final entities = auth.user?.allEntities ?? [];
-
-    showModalBottomSheet(
-      context: context,
-      builder: (context) => ListView(
-        shrinkWrap: true,
-        children: entities
-            .map((e) => ListTile(
-                  title: Text(e),
-                  selected: e == auth.entity,
-                  onTap: () {
-                    ref.read(authProvider.notifier).selectEntity(e);
-                    Navigator.pop(context);
-                  },
-                ))
-            .toList(),
-      ),
-    );
-  }
-
-  void _confirmLogout(BuildContext context, WidgetRef ref) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Logout'),
-        content: const Text('This will clear your API key. Continue?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.pop(context);
-              ref.read(authProvider.notifier).logout();
-            },
-            child: const Text('Logout'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader(this.title);
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-      child: Text(
-        title,
-        style: TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w600,
-          color: WandbColors.yellow,
-        ),
       ),
     );
   }

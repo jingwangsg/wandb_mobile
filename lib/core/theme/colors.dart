@@ -5,6 +5,8 @@ class WandbColors {
 
   // Brand
   static const yellow = Color(0xFFFFBE00);
+  static const teal = Color(0xFF4DA8B8);
+  static const star = Color(0xFFF7BF47);
   static const darkBg = Color(0xFF1A1A2E);
   static const surface = Color(0xFF16213E);
   static const surfaceElevated = Color(0xFF0F3460);

@@ -67,12 +67,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   Future<void> _tryAutoLogin() async {
     final storage = _ref.read(secureStorageProvider);
-    var apiKey = await storage.getApiKey();
-
-    // DEV: auto-login for testing
-    if (apiKey == null || apiKey.isEmpty) {
-      apiKey = const String.fromEnvironment('WANDB_API_KEY');
-    }
+    final apiKey = await storage.getApiKey() ?? '';
 
     if (apiKey.isEmpty) {
       state = const AuthState(status: AuthStatus.unauthenticated);
@@ -82,11 +77,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     final baseUrl = await storage.getBaseUrl();
     final entity = await storage.getEntity();
 
-    await login(
-      apiKey: apiKey,
-      baseUrl: baseUrl,
-      preselectedEntity: entity,
-    );
+    await login(apiKey: apiKey, baseUrl: baseUrl, preselectedEntity: entity);
   }
 
   Future<void> login({
@@ -103,7 +94,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
       data: {'baseUrl': effectiveBaseUrl},
     );
 
-    final client = GraphqlClient(
+    final client = _ref.read(graphqlClientFactoryProvider)(
       apiKey: apiKey,
       baseUrl: effectiveBaseUrl,
     );
@@ -120,6 +111,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
       // Persist credentials
       final storage = _ref.read(secureStorageProvider);
       await storage.setApiKey(apiKey);
+      await storage.setUserId(user.id);
       if (baseUrl != null) {
         await storage.setBaseUrl(baseUrl);
       } else {
@@ -138,32 +130,22 @@ class AuthNotifier extends StateNotifier<AuthState> {
       );
       client.dispose();
     } on AuthenticationException {
-      _diagnostics.record(
-        'auth_login_failure',
-        'Invalid API key',
-      );
+      await _ref.read(secureStorageProvider).clearAll();
+      _diagnostics.record('auth_login_failure', 'Invalid API key');
       client.dispose();
       state = const AuthState(
         status: AuthStatus.unauthenticated,
         error: 'Invalid API key',
       );
     } on WandbApiException catch (e, st) {
-      _diagnostics.record(
-        'auth_login_failure',
-        e.message,
-        stackTrace: st,
-      );
+      _diagnostics.record('auth_login_failure', e.message, stackTrace: st);
       client.dispose();
       state = AuthState(
         status: AuthStatus.unauthenticated,
         error: _errorMessageFor(e),
       );
     } catch (e, st) {
-      _diagnostics.record(
-        'auth_login_failure',
-        e.toString(),
-        stackTrace: st,
-      );
+      _diagnostics.record('auth_login_failure', e.toString(), stackTrace: st);
       client.dispose();
       state = AuthState(
         status: AuthStatus.unauthenticated,
@@ -201,7 +183,7 @@ final graphqlClientProvider = Provider<GraphqlClient>((ref) {
   if (apiKey == null || apiKey.isEmpty) {
     throw StateError('Not authenticated');
   }
-  final client = GraphqlClient(
+  final client = ref.read(graphqlClientFactoryProvider)(
     apiKey: apiKey,
     baseUrl: auth.baseUrl ?? defaultWandbBaseUrl,
   );
