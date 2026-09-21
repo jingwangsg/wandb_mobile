@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/models/resource_refs.dart';
-import '../../../core/models/metric_point.dart';
 import '../../../core/models/paginated.dart';
 import '../../../core/models/run.dart';
 import '../../../core/providers/paginated_async_notifier.dart';
@@ -97,27 +96,7 @@ final runsProvider = StateNotifierProvider.family<
 >((ref, projectRef) {
   final repo = ref.watch(runsRepositoryProvider);
   final filters = ref.watch(runFiltersProvider(projectRef));
-  return RunsListNotifier(
-    repo,
-    projectRef.entity,
-    projectRef.project,
-    filters,
-  );
-});
-
-// ─── Sampled History (for charts) ────────────────────────
-
-final sampledHistoryProvider = FutureProvider.family<
-  List<MetricSeries>,
-  ({RunRef runRef, List<String> keys})
->((ref, params) async {
-  final repo = ref.watch(runsRepositoryProvider);
-  return repo.getSampledHistory(
-    entity: params.runRef.entity,
-    project: params.runRef.project,
-    runName: params.runRef.runName,
-    keys: params.keys,
-  );
+  return RunsListNotifier(repo, projectRef.entity, projectRef.project, filters);
 });
 
 // ─── Auto-polling for running runs ───────────────────────

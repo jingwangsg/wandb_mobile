@@ -70,22 +70,6 @@ List<MetricPoint> lttbDownsample(List<MetricPoint> data, int targetPoints) {
   return result;
 }
 
-/// Exponential moving average smoothing, matching wandb web implementation.
-/// [weight] ranges from 0 (no smoothing) to 0.99 (heavy smoothing).
-List<MetricPoint> applySmoothing(List<MetricPoint> data, double weight) {
-  if (weight <= 0 || data.isEmpty) return data;
-
-  final smoothed = <MetricPoint>[];
-  var last = data.first.value;
-  for (final point in data) {
-    last = last * weight + point.value * (1 - weight);
-    smoothed.add(
-      MetricPoint(step: point.step, value: last, timestamp: point.timestamp),
-    );
-  }
-  return smoothed;
-}
-
 /// Debiased TWEMA; normalize step distances so sampling density does not set the smoothing strength.
 List<MetricPoint> timeWeightedSmoothing(List<MetricPoint> data, double weight) {
   if (weight <= 0 || data.length < 2) return data;

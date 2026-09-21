@@ -8,13 +8,12 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'app.dart';
 import 'core/diagnostics/runtime_diagnostics.dart';
 import 'core/providers/mobile_preferences.dart';
-import 'features/charts/data/run_chart_preferences_store.dart';
 import 'features/notifications/data/push_service.dart';
 import 'core/app_configuration.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await RunChartPreferencesStore.initialize();
+  await Hive.initFlutter();
   await Hive.openBox<String>(MobilePreferencesStore.boxName);
   if (AppConfiguration.pushConfigured) {
     await initializeFirebase();

@@ -14,7 +14,6 @@ import '../../charts/models/workspace_settings.dart';
 class RunsRepository {
   const RunsRepository(this._client);
   final GraphqlClient _client;
-  static const _chartAxisKeys = ['_step', '_timestamp'];
 
   Future<WandbRun> getRun({
     required String entity,
@@ -225,76 +224,6 @@ class RunsRepository {
             x: (xAxis == '_timestamp' ? x * 1000 : x).toDouble(),
             low: low is num && low.isFinite ? low.toDouble() : null,
             high: high is num && high.isFinite ? high.toDouble() : null,
-          ),
-        );
-      }
-      return MetricSeries(key: key, points: points);
-    }).toList();
-  }
-
-  /// Get sampled history for chart rendering.
-  /// Returns a list of MetricSeries, one per requested key.
-  Future<List<MetricSeries>> getSampledHistory({
-    required String entity,
-    required String project,
-    required String runName,
-    required List<String> keys,
-    int samples = 500,
-  }) async {
-    final requestedKeys = keys
-        .where((key) => !_chartAxisKeys.contains(key))
-        .toList(growable: false);
-    if (requestedKeys.isEmpty) return [];
-
-    final specs = requestedKeys
-        .map(
-          (key) => jsonEncode({
-            'keys': [..._chartAxisKeys, key],
-            'samples': samples,
-          }),
-        )
-        .toList(growable: false);
-    final data = await _client.query(
-      WandbQueries.getSampledHistory,
-      variables: {
-        'entity': entity,
-        'project': project,
-        'run': runName,
-        'specs': specs,
-      },
-    );
-
-    final run = (data['project'] as Map)['run'] as Map<String, dynamic>;
-    final historyArrays = run['sampledHistory'] as List;
-
-    return requestedKeys.asMap().entries.map((entry) {
-      final key = entry.value;
-      final rows =
-          entry.key < historyArrays.length && historyArrays[entry.key] is List
-              ? historyArrays[entry.key] as List
-              : const [];
-      final points = <MetricPoint>[];
-      for (var index = 0; index < rows.length; index++) {
-        final map = _sampledHistoryRowAsMap(rows[index]);
-        final value = map[key];
-        if (value is! num) continue;
-
-        final rawStep = map['_step'];
-        final step = rawStep is num ? rawStep : index;
-
-        final rawTimestamp = map['_timestamp'];
-        final timestamp =
-            rawTimestamp is num
-                ? DateTime.fromMillisecondsSinceEpoch(
-                  rawTimestamp.toInt() * 1000,
-                )
-                : null;
-
-        points.add(
-          MetricPoint(
-            step: step,
-            value: value.toDouble(),
-            timestamp: timestamp,
           ),
         );
       }
