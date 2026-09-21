@@ -38,13 +38,12 @@ class RunDetailRepository extends RunsRepository {
   }) async => _run;
 
   @override
-  Future<List<MetricSeries>> getSampledHistory({
+  Future<List<MetricSeries>> getBucketedHistory({
     required String entity,
     required String project,
     required String runName,
     required List<String> keys,
-    String? xKey,
-    int samples = 500,
+    required String xAxis,
   }) async {
     return keys
         .map(
@@ -160,6 +159,10 @@ void main() {
 
     expect(find.text('Search logs'), findsOneWidget);
     expect(find.text('step=1 loss=0.5'), findsOneWidget);
+    // Long logs are selectable through one area over plain text; a
+    // SelectableText per line doubled memory while pages loaded.
+    expect(find.byType(SelectionArea), findsOneWidget);
+    expect(find.byType(SelectableText), findsNothing);
     expect(tester.takeException(), isNull);
   });
 }

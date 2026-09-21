@@ -101,10 +101,14 @@ List<MetricPoint> timeWeightedSmoothing(List<MetricPoint> data, double weight) {
     final decay = math.pow(smoothing, distance).toDouble();
     last = last * decay + point.value;
     debias = debias * decay + 1;
+    // The band stays raw: only the line is smoothed, as on the web.
     return MetricPoint(
       step: point.step,
       value: last / debias,
       timestamp: point.timestamp,
+      x: point.x,
+      low: point.low,
+      high: point.high,
     );
   }).toList();
 }

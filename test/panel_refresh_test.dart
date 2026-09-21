@@ -52,13 +52,12 @@ class SlowProjectRepository extends RunsRepository {
   }
 
   @override
-  Future<List<MetricSeries>> getSampledHistory({
+  Future<List<MetricSeries>> getBucketedHistory({
     required String entity,
     required String project,
     required String runName,
     required List<String> keys,
-    String? xKey,
-    int samples = 500,
+    required String xAxis,
   }) async {
     histories++;
     await ready.future;

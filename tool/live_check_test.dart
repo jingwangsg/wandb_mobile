@@ -67,13 +67,19 @@ void main() {
           final keys =
               (run.historyKeys?['keys'] as Map? ?? {}).keys.cast<String>();
           const metric = 'train/loss';
-          final history = await container.read(
-            panelSeriesProvider((
-              project: const ProjectRef(entity: entity, project: project),
-              runName: run.name,
-              metric: metric,
-            )).future,
+          final historyProvider = panelSeriesProvider((
+            project: const ProjectRef(entity: entity, project: project),
+            runName: run.name,
+            metric: metric,
+          ));
+          // Hold the subscription a chart widget holds: an unlistened
+          // autoDispose provider is disposed mid-flight and returns nothing.
+          final historySubscription = container.listen(
+            historyProvider,
+            (_, _) {},
           );
+          final history = await container.read(historyProvider.future);
+          historySubscription.close();
           final logs = await runs.getLogs(
             entity: entity,
             project: project,
@@ -104,15 +110,20 @@ void main() {
             username: container.read(authProvider).user!.username,
           );
           expect(workspace, isNotNull);
-          final runtimeAxis = await runs.getSampledHistory(
+          final runtimeAxis = await runs.getBucketedHistory(
             entity: entity,
             project: project,
             runName: run.name,
             keys: [metric],
-            xKey: '_runtime',
+            xAxis: '_runtime',
           );
           expect(runtimeAxis.single.points, isNotEmpty);
-          expect(runtimeAxis.single.points.every((p) => p.x != null), true);
+          expect(
+            runtimeAxis.single.points.every(
+              (p) => p.x != null && p.low != null && p.high != null,
+            ),
+            true,
+          );
           final systemSeries = await container.read(
             runSystemSeriesProvider(
               RunRef(entity: entity, project: project, runName: run.name),

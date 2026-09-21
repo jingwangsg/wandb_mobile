@@ -113,24 +113,32 @@ class _WandbLineChartState extends State<WandbLineChart> {
               var points = <MetricPoint>[];
               for (final point in series.points) {
                 if (!point.value.isFinite) continue;
-                final x = switch (widget.xAxis) {
-                  '_step' => point.step.toDouble(),
-                  '_absolute_runtime' =>
-                    origin != null && point.timestamp != null
-                        ? point.timestamp!.difference(origin).inMilliseconds /
-                            1000
-                        : point.step.toDouble(),
-                  '_timestamp' =>
-                    (point.timestamp?.millisecondsSinceEpoch ?? point.step)
-                        .toDouble(),
-                  _ => point.x,
-                };
+                // Server-bucketed points carry their axis position; single
+                // rows derive it from the step or timestamp.
+                final x =
+                    point.x ??
+                    switch (widget.xAxis) {
+                      '_step' => point.step.toDouble(),
+                      '_absolute_runtime' =>
+                        origin != null && point.timestamp != null
+                            ? point.timestamp!
+                                    .difference(origin)
+                                    .inMilliseconds /
+                                1000
+                            : point.step.toDouble(),
+                      '_timestamp' =>
+                        (point.timestamp?.millisecondsSinceEpoch ?? point.step)
+                            .toDouble(),
+                      _ => null,
+                    };
                 if (x == null || !x.isFinite) continue;
                 points.add(
                   MetricPoint(
                     step: x,
                     value: point.value,
                     timestamp: point.timestamp,
+                    low: point.low,
+                    high: point.high,
                   ),
                 );
               }
@@ -139,9 +147,12 @@ class _WandbLineChartState extends State<WandbLineChart> {
                   constraints.maxWidth.isFinite
                       ? constraints.maxWidth.round().clamp(120, 1200)
                       : 300;
+              // Bucketed points already number about one per pixel and their
+              // bands must keep every extreme, so only raw rows are thinned.
+              final banded = points.any((point) => point.low != null);
               return MetricSeries(
                 key: series.key,
-                points: lttbDownsample(points, target),
+                points: banded ? points : lttbDownsample(points, target),
               );
             }).toList();
         return SfCartesianChart(
@@ -236,36 +247,55 @@ class _WandbLineChartState extends State<WandbLineChart> {
                       color: colors.onSurfaceVariant,
                     ),
                   ),
-          series:
-              processed
-                  .asMap()
-                  .entries
-                  .map(
-                    (entry) => LineSeries<MetricPoint, num>(
-                      dataSource: entry.value.points,
-                      name: entry.value.key,
-                      xValueMapper: (point, _) => point.step,
-                      yValueMapper:
-                          (point, _) =>
-                              widget.logScale && point.value <= 0
-                                  ? null
-                                  : point.value,
-                      emptyPointSettings: const EmptyPointSettings(
-                        mode: EmptyPointMode.gap,
-                      ),
-                      color:
-                          WandbColors.chartPalette[entry.key %
-                              WandbColors.chartPalette.length],
-                      width: 1.6,
-                      animationDuration: 0,
-                      markerSettings: MarkerSettings(
-                        isVisible: entry.value.points.length == 1,
-                        width: 5,
-                        height: 5,
-                      ),
-                    ),
-                  )
-                  .toList(),
+          series: [
+            for (final (index, line) in processed.indexed) ...[
+              if (line.points.any((point) => point.low != null))
+                RangeAreaSeries<MetricPoint, num>(
+                  dataSource: line.points,
+                  xValueMapper: (point, _) => point.step,
+                  lowValueMapper:
+                      (point, _) =>
+                          widget.logScale && (point.low ?? 0) <= 0
+                              ? null
+                              : point.low,
+                  highValueMapper:
+                      (point, _) =>
+                          widget.logScale && (point.high ?? 0) <= 0
+                              ? null
+                              : point.high,
+                  color: WandbColors
+                      .chartPalette[index % WandbColors.chartPalette.length]
+                      .withValues(alpha: 0.18),
+                  borderWidth: 0,
+                  animationDuration: 0,
+                  enableTrackball: false,
+                  isVisibleInLegend: false,
+                ),
+              LineSeries<MetricPoint, num>(
+                dataSource: line.points,
+                name: line.key,
+                xValueMapper: (point, _) => point.step,
+                yValueMapper:
+                    (point, _) =>
+                        widget.logScale && point.value <= 0
+                            ? null
+                            : point.value,
+                emptyPointSettings: const EmptyPointSettings(
+                  mode: EmptyPointMode.gap,
+                ),
+                color:
+                    WandbColors.chartPalette[index %
+                        WandbColors.chartPalette.length],
+                width: 1.6,
+                animationDuration: 0,
+                markerSettings: MarkerSettings(
+                  isVisible: line.points.length == 1,
+                  width: 5,
+                  height: 5,
+                ),
+              ),
+            ],
+          ],
         );
       },
     );

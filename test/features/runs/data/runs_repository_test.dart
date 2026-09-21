@@ -145,55 +145,69 @@ void main() {
     );
   });
 
-  group('RunsRepository.getSampledHistory', () {
-    test(
-      'requests a custom X-axis key with each metric and keeps its value',
-      () async {
-        final client = RecordingGraphqlClient((_, variables) async {
-          expect((variables!['specs'] as List<dynamic>).cast<String>(), [
-            jsonEncode({
-              'keys': ['_step', '_timestamp', 'epoch', 'loss'],
-              'samples': 500,
-            }),
-          ]);
-          return {
-            'project': {
-              'run': {
-                'sampledHistory': [
-                  [
-                    {
-                      '_step': 0,
-                      '_timestamp': 1700000000,
-                      'epoch': 1,
-                      'loss': 0.9,
-                    },
-                    {'_step': 1, '_timestamp': 1700000001, 'loss': 0.8},
-                    {
-                      '_step': 2,
-                      '_timestamp': 1700000002,
-                      'epoch': 2,
-                      'loss': 0.7,
-                    },
-                  ],
+  group('RunsRepository.getBucketedHistory', () {
+    test('buckets along the chosen axis and keeps each bucket band', () async {
+      final client = RecordingGraphqlClient((_, variables) async {
+        expect((variables!['specs'] as List<dynamic>).cast<String>(), [
+          jsonEncode({
+            'keys': ['loss'],
+            'samples': 300,
+            'xAxis': '_timestamp',
+          }),
+        ]);
+        return {
+          'project': {
+            'run': {
+              'bucketedHistory': [
+                [
+                  {
+                    'bucketSize': 2,
+                    '_stepAvg': 5,
+                    '_timestampAvg': 1700000000,
+                    'lossAvg': 0.9,
+                    'lossMin': 0.8,
+                    'lossMax': 1.0,
+                  },
+                  {
+                    'bucketSize': 1,
+                    '_stepAvg': 9,
+                    '_timestampAvg': 1700000010,
+                    'lossAvg': null,
+                    'lossMin': null,
+                    'lossMax': null,
+                  },
+                  {
+                    'bucketSize': 3,
+                    '_stepAvg': 12,
+                    '_timestampAvg': 1700000020,
+                    'lossAvg': 0.7,
+                    'lossMin': 0.6,
+                    'lossMax': 0.75,
+                  },
                 ],
-              },
+              ],
             },
-          };
-        });
-        final series = await RunsRepository(client).getSampledHistory(
-          entity: 'entity',
-          project: 'project',
-          runName: 'run',
-          keys: ['loss'],
-          xKey: 'epoch',
-        );
-        expect(series.single.points.map((point) => (point.step, point.x)), [
-          (0, 1.0),
-          (2, 2.0),
-        ], reason: 'rows without the X key are dropped, as on the web');
-      },
-    );
+          },
+        };
+      });
+      final series = await RunsRepository(client).getBucketedHistory(
+        entity: 'entity',
+        project: 'project',
+        runName: 'run',
+        keys: ['loss'],
+        xAxis: '_timestamp',
+      );
+      expect(
+        series.single.points.map(
+          (point) => (point.x, point.value, point.low, point.high),
+        ),
+        [(1700000000000.0, 0.9, 0.8, 1.0), (1700000020000.0, 0.7, 0.6, 0.75)],
+        reason: 'empty buckets are skipped and wall time is in milliseconds',
+      );
+    });
+  });
 
+  group('RunsRepository.getSampledHistory', () {
     test(
       'requests one sampled history spec per key and preserves sampled steps',
       () async {

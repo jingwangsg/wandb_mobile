@@ -29,11 +29,57 @@ class LinePlotSettings extends StatefulWidget {
 
 class _LinePlotSettingsState extends State<LinePlotSettings> {
   late MetricChartRule _rule = widget.rule;
+  late final _xMin = TextEditingController(text: _text(_rule.resolvedXMin));
+  late final _xMax = TextEditingController(text: _text(_rule.resolvedXMax));
+  late final _yMin = TextEditingController(text: _text(_rule.resolvedMin));
+  late final _yMax = TextEditingController(text: _text(_rule.resolvedMax));
+
+  static String _text(double? value) =>
+      value?.toString().replaceFirst(RegExp(r'\.0$'), '') ?? '';
+
+  @override
+  void dispose() {
+    for (final controller in [_xMin, _xMax, _yMin, _yMax]) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  void _update(MetricChartRule rule) {
+    setState(() => _rule = rule);
+    widget.onChanged(_rule);
+  }
+
+  /// One axis bound. An empty or unfinished entry means auto.
+  Widget _bound(
+    TextEditingController controller,
+    String label,
+    MetricChartRule Function(double? value) apply,
+  ) => Expanded(
+    child: TextField(
+      controller: controller,
+      keyboardType: const TextInputType.numberWithOptions(
+        decimal: true,
+        signed: true,
+      ),
+      decoration: InputDecoration(labelText: label, hintText: 'Auto'),
+      onChanged: (text) {
+        final value = double.tryParse(text.trim());
+        // Infinity and NaN parse but cannot be saved as JSON; treat as auto.
+        _update(apply(value != null && value.isFinite ? value : null));
+      },
+    ),
+  );
 
   @override
   Widget build(BuildContext context) => SafeArea(
-    child: Padding(
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+    child: SingleChildScrollView(
+      padding: EdgeInsets.fromLTRB(
+        20,
+        0,
+        20,
+        24 + MediaQuery.viewInsetsOf(context).bottom,
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -73,21 +119,51 @@ class _LinePlotSettingsState extends State<LinePlotSettings> {
                       (_) => XAxisPicker(
                         selected: _rule.xAxis,
                         options: widget.xAxisOptions,
-                        onSelected: (value) {
-                          setState(() => _rule = _rule.copyWith(xAxis: value));
-                          widget.onChanged(_rule);
-                        },
+                        onSelected:
+                            (value) => _update(_rule.copyWith(xAxis: value)),
                       ),
                 ),
+          ),
+          Row(
+            children: [
+              _bound(
+                _xMin,
+                'X min',
+                (value) =>
+                    _rule.copyWith(useAutoXMin: value == null, xMin: value),
+              ),
+              const SizedBox(width: 12),
+              _bound(
+                _xMax,
+                'X max',
+                (value) =>
+                    _rule.copyWith(useAutoXMax: value == null, xMax: value),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              _bound(
+                _yMin,
+                'Y min',
+                (value) =>
+                    _rule.copyWith(useAutoMin: value == null, min: value),
+              ),
+              const SizedBox(width: 12),
+              _bound(
+                _yMax,
+                'Y max',
+                (value) =>
+                    _rule.copyWith(useAutoMax: value == null, max: value),
+              ),
+            ],
           ),
           SwitchListTile.adaptive(
             contentPadding: EdgeInsets.zero,
             title: const Text('Log scale (Y)'),
             value: _rule.logScale,
-            onChanged: (value) {
-              setState(() => _rule = _rule.copyWith(logScale: value));
-              widget.onChanged(_rule);
-            },
+            onChanged: (value) => _update(_rule.copyWith(logScale: value)),
           ),
           const Divider(),
           const SizedBox(height: 16),
@@ -115,15 +191,18 @@ class _LinePlotSettingsState extends State<LinePlotSettings> {
             divisions: 99,
             value: _rule.smoothing.clamp(0, 0.99),
             label: _rule.smoothing.toStringAsFixed(2),
-            onChanged: (value) {
-              setState(() => _rule = _rule.copyWith(smoothing: value));
-              widget.onChanged(_rule);
-            },
+            onChanged: (value) => _update(_rule.copyWith(smoothing: value)),
           ),
           const SizedBox(height: 8),
           TextButton(
             onPressed: () {
-              setState(() => _rule = widget.resetRule);
+              setState(() {
+                _rule = widget.resetRule;
+                _xMin.text = _text(_rule.resolvedXMin);
+                _xMax.text = _text(_rule.resolvedXMax);
+                _yMin.text = _text(_rule.resolvedMin);
+                _yMax.text = _text(_rule.resolvedMax);
+              });
               widget.onReset();
             },
             child: Text(

@@ -65,6 +65,14 @@ class MobileQueries {
     }
   ''';
 
+  static const bucketedHistory = r'''
+    query MobileBucketedHistory($entity: String!, $project: String!, $run: String!, $specs: [JSONString!]!) {
+      project(entityName: $entity, name: $project) {
+        run(name: $run) { bucketedHistory(specs: $specs, packVersion: 1) }
+      }
+    }
+  ''';
+
   static const workspaceViews = r'''
     query MobileWorkspaceViews($entity: String!, $project: String!, $username: String!) {
       project(entityName: $entity, name: $project) {

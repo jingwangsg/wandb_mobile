@@ -187,3 +187,39 @@ Delivered artifact:
 - SHA-256: `5b58410256b35f044628cac58869e313a8f3ed5808bcf1463a00706b0eb06571`.
 - Built without `config/android.json`, so push notification client options
   are not configured in this preview.
+
+## Preview 2.0.3: full-fidelity charts, run listing, logs memory, September 22
+
+Four reports against 2.0.2, each measured before changing code:
+
+- Project panels for `nv-gear/gr00t2_pretrain` (978 runs) spun forever. The
+  user's web workspace lists 7 runs explicitly, so the listing loop paged the
+  whole project at 1.4 s and 1.3 MB per 20-run page (about 70 s). Panels now
+  list one page of the newest runs (five at most when no explicit selection
+  exists) and fetch explicitly shown runs by name with a `$in` filter (1.1 s).
+  On the emulator the Panels tab renders `6 of 978 runs` within 6 s.
+- Loss looked smooth in the app but jittery on the web. Sampled history hides
+  spikes: for `rz2hg2jr` the sampled `train/loss` never exceeds 0.100 at 500,
+  1500 or 5000 samples. Panels now use `Run.bucketedHistory` like the web:
+  300 server-side buckets along the chosen X axis, each drawn as an average
+  line inside a min-to-max band.
+- Line plot settings gained X and Y min/max fields (empty means auto).
+- Opening Logs on long logs was reported to crash. The crash did not reproduce
+  on the API 35 emulator (3 GB), but loading older pages spiked the process to
+  283-372 MB PSS with a `SelectableText` per line. One `SelectionArea` over
+  plain text lowered the same sequence to 158-179 MB.
+
+Verification: `flutter analyze` (two pre-existing warnings), `flutter test`
+with 132 passing tests, the read-only live check (416 bucketed loss points,
+407 points on the `_runtime` axis), and three independent review passes
+(correctness, simplicity, specification) approving the final tree.
+
+Delivered artifact:
+
+- `~/Downloads/WandbMobile-2.0.3-preview-20260922.apk`
+- Version 2.0.3, versionCode 5; universal release APK, 62,661,149 bytes.
+- Target API 36; ARM64, ARMv7, and x86-64. APK v2 signature verified, still
+  using the development signing identity.
+- SHA-256: `61fd08c3856bb3c7d35a62a2909659110277335c7760cfa20feb3d547ffa78cb`.
+- Installed and exercised on the API 35 emulator: run detail charts, Logs
+  with five older pages, and the `gr00t2_pretrain` Panels tab.

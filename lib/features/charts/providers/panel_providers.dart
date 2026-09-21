@@ -75,62 +75,104 @@ bool isRunVisible(
   String runName,
 ) => overrides?[runName] ?? workspace?.isRunVisible(runName) ?? true;
 
-final visibleRunsProvider = FutureProvider.autoDispose
-    .family<VisibleRuns, ProjectRef>((ref, project) async {
-      ref.watch(panelRefreshProvider((project: project, runName: null)));
-      final repository = ref.watch(runsRepositoryProvider);
-      final filters = ref.watch(runFiltersProvider(project));
-      final (overrides, storedLimit) = ref.watch(
-        mobilePreferencesProvider.select(
-          (value) => (
-            value.runVisibility[project.path],
-            value.visibleRunLimits[project.path],
-          ),
-        ),
+final visibleRunsProvider = FutureProvider.autoDispose.family<
+  VisibleRuns,
+  ProjectRef
+>((ref, project) async {
+  ref.watch(panelRefreshProvider((project: project, runName: null)));
+  final repository = ref.watch(runsRepositoryProvider);
+  final filters = ref.watch(runFiltersProvider(project));
+  final (overrides, storedLimit) = ref.watch(
+    mobilePreferencesProvider.select(
+      (value) => (
+        value.runVisibility[project.path],
+        value.visibleRunLimits[project.path],
+      ),
+    ),
+  );
+  // A rebuild disposes this build while it may still be awaiting; stop
+  // early so a superseded build does not keep paging.
+  var disposed = false;
+  ref.onDispose(() => disposed = true);
+  final workspace = await ref.watch(workspaceSettingsProvider(project).future);
+  final limit = storedLimit ?? workspace?.maxRuns ?? 10;
+  final tabFilters = filters.toApiFilters();
+  final candidates = <WandbRun>[];
+  final visible = <WandbRun>[];
+  int? totalCount;
+
+  // Pages in the Runs tab's order, keeping eligible runs until [limit].
+  Future<void> collect(Map<String, dynamic>? apiFilters, int maxPages) async {
+    String? cursor;
+    for (
+      var page = 0;
+      page < maxPages && !disposed && visible.length < limit;
+      page++
+    ) {
+      final result = await repository.getRuns(
+        entity: project.entity,
+        project: project.project,
+        cursor: cursor,
+        // Page at least 20 so sparse selections do not crawl tiny pages.
+        perPage: max(limit, 20),
+        order: filters.order,
+        filters: apiFilters,
       );
-      // A rebuild disposes this build while it may still be awaiting; stop
-      // early so a superseded build does not keep paging.
-      var disposed = false;
-      ref.onDispose(() => disposed = true);
-      final workspace = await ref.watch(
-        workspaceSettingsProvider(project).future,
+      totalCount ??= result.totalCount;
+      candidates.addAll(result.items);
+      visible.addAll(
+        result.items
+            .where((run) => isRunVisible(overrides, workspace, run.name))
+            .take(limit - visible.length),
       );
-      final limit = storedLimit ?? workspace?.maxRuns ?? 10;
-      final candidates = <WandbRun>[];
-      final visible = <WandbRun>[];
-      int? totalCount;
-      String? cursor;
-      while (!disposed && visible.length < limit) {
-        final page = await repository.getRuns(
-          entity: project.entity,
-          project: project.project,
-          cursor: cursor,
-          // Page at least 20 so sparse web selections do not crawl tiny pages.
-          perPage: max(limit, 20),
-          order: filters.order,
-          filters: filters.toApiFilters(),
-        );
-        totalCount ??= page.totalCount;
-        candidates.addAll(page.items);
-        for (final run in page.items) {
-          if (visible.length < limit &&
-              isRunVisible(overrides, workspace, run.name)) {
-            visible.add(run);
-          }
-        }
-        if (!page.hasNextPage) break;
-        if (page.endCursor == null || page.endCursor == cursor) {
-          throw StateError('Project runs did not advance to the next page');
-        }
-        cursor = page.endCursor;
+      if (!result.hasNextPage) return;
+      if (result.endCursor == null || result.endCursor == cursor) {
+        throw StateError('Project runs did not advance to the next page');
       }
-      return (
-        candidates: candidates,
-        visible: visible,
-        limit: limit,
-        totalCount: totalCount,
-      );
-    });
+      cursor = result.endCursor;
+    }
+  }
+
+  // Newest runs first, as the Runs tab lists them. Scan at most five pages
+  // so hiding most recent runs cannot crawl the whole project; an explicit
+  // web selection needs one page here because its runs are fetched by name.
+  final allowlist =
+      workspace == null || workspace.allRunsSelected
+          ? null
+          : workspace.selectionExceptions;
+  await collect(tabFilters, allowlist == null ? 5 : 1);
+
+  // Runs shown explicitly, by the web selection or an app toggle, may be
+  // older than the pages scanned; fetch the missing ones by name.
+  final named = {
+    ...?allowlist,
+    ...?overrides?.entries
+        .where((entry) => entry.value)
+        .map((entry) => entry.key),
+  }..removeWhere(
+    (name) =>
+        overrides?[name] == false || candidates.any((run) => run.name == name),
+  );
+  if (named.isNotEmpty) {
+    final byName = {
+      'name': {r'$in': named.toList()},
+    };
+    await collect(
+      tabFilters == null
+          ? byName
+          : {
+            r'$and': [tabFilters, byName],
+          },
+      1,
+    );
+  }
+  return (
+    candidates: candidates,
+    visible: visible,
+    limit: limit,
+    totalCount: totalCount,
+  );
+});
 
 /// Reloads one panel. The shared run listing is retried too when it is what
 /// failed; always re-listing would re-page runs on every 30-second poll.
@@ -162,25 +204,20 @@ final panelSeriesProvider = FutureProvider.autoDispose.family<
       request.runName == null
           ? request.project.path
           : '${request.project.path}/${request.runName}';
-  // The history key to fetch for the X axis. Axes derived from `_step` or
-  // `_timestamp` (the switch in WandbLineChart) need nothing extra because
-  // every request carries both, and selecting the key rather than the axis
-  // keeps switches between them from refetching.
-  final xKey = ref.watch(
-    mobilePreferencesProvider.select((value) {
-      final xAxis = value.ruleFor(scope, request.metric, workspace).xAxis;
-      return const {'_step', '_absolute_runtime', '_timestamp'}.contains(xAxis)
-          ? null
-          : xAxis;
-    }),
+  // The server buckets along the chosen axis, so only an axis change (not
+  // smoothing or range edits) refetches.
+  final xAxis = ref.watch(
+    mobilePreferencesProvider.select(
+      (value) => value.ruleFor(scope, request.metric, workspace).xAxis,
+    ),
   );
   if (request.runName != null) {
-    return repository.getSampledHistory(
+    return repository.getBucketedHistory(
       entity: request.project.entity,
       project: request.project.project,
       runName: request.runName!,
       keys: [request.metric],
-      xKey: xKey,
+      xAxis: xAxis,
     );
   }
   final runs = await ref.watch(visibleRunsProvider(request.project).future);
@@ -190,12 +227,12 @@ final panelSeriesProvider = FutureProvider.autoDispose.family<
     final end = (start + 6).clamp(0, runs.visible.length);
     final batch = await Future.wait(
       runs.visible.sublist(start, end).map((run) async {
-        final history = await repository.getSampledHistory(
+        final history = await repository.getBucketedHistory(
           entity: request.project.entity,
           project: request.project.project,
           runName: run.name,
           keys: [request.metric],
-          xKey: xKey,
+          xAxis: xAxis,
         );
         return MetricSeries(
           key: '${run.displayName} (${run.name})',

@@ -230,31 +230,36 @@ class _RunLogsViewState extends ConsumerState<RunLogsView> {
                     title: 'No logs yet',
                     icon: 'list_bullets_(alt)',
                   )
-                  : ListView.builder(
-                    controller: _scroll,
-                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
-                    itemCount: lines.length,
-                    itemBuilder: (context, index) {
-                      final line = SelectableText.rich(
-                        TextSpan(
-                          children: ansiLogSpans(
-                            lines[index].text,
-                            Theme.of(context).colorScheme,
+                  // One selection area over plain text keeps thousands of
+                  // lines light; a SelectableText per line carries its own
+                  // editor state and spiked memory while pages loaded.
+                  : SelectionArea(
+                    child: ListView.builder(
+                      controller: _scroll,
+                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
+                      itemCount: lines.length,
+                      itemBuilder: (context, index) {
+                        final line = Text.rich(
+                          TextSpan(
+                            children: ansiLogSpans(
+                              lines[index].text,
+                              Theme.of(context).colorScheme,
+                            ),
                           ),
-                        ),
-                        style: const TextStyle(
-                          fontFamily: 'Inconsolata',
-                          fontSize: 13,
-                          height: 1.4,
-                        ),
-                      );
-                      return _wrap
-                          ? line
-                          : SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            child: line,
-                          );
-                    },
+                          style: const TextStyle(
+                            fontFamily: 'Inconsolata',
+                            fontSize: 13,
+                            height: 1.4,
+                          ),
+                        );
+                        return _wrap
+                            ? line
+                            : SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: line,
+                            );
+                      },
+                    ),
                   ),
         ),
       ],

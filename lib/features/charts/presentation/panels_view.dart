@@ -195,6 +195,7 @@ class _PanelsViewState extends ConsumerState<PanelsView> {
                 onPressed:
                     () => showModalBottomSheet<void>(
                       context: context,
+                      isScrollControlled: true,
                       useSafeArea: true,
                       builder:
                           (_) => LinePlotSettings(
@@ -821,6 +822,7 @@ class _PanelDetailScreenState extends ConsumerState<PanelDetailScreen> {
                     onPressed:
                         () => showModalBottomSheet<void>(
                           context: context,
+                          isScrollControlled: true,
                           useSafeArea: true,
                           builder:
                               (_) => LinePlotSettings(

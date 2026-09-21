@@ -173,6 +173,44 @@ class AppFixtureClient extends GraphqlClient {
         return {
           'project': {'allViews': connection([])},
         };
+      case 'MobileBucketedHistory':
+        return {
+          'project': {
+            'run': {
+              'bucketedHistory':
+                  (variables!['specs'] as List).map((spec) {
+                    final decoded = jsonDecode(spec as String) as Map;
+                    final keys = (decoded['keys'] as List).cast<String>();
+                    final xAxis = decoded['xAxis'] as String;
+                    if (keys.any((key) => key.startsWith('system/')))
+                      throw StateError(
+                        'System metrics belong to events, not training history',
+                      );
+                    return [
+                      for (var step = 0; step <= 800; step += 10)
+                        {
+                          'bucketSize': 1,
+                          '_stepAvg': step,
+                          '${xAxis}Avg':
+                              xAxis == '_timestamp' ? 1700000000 + step : step,
+                          for (final key in keys) ...{
+                            '${key}Avg':
+                                0.8 * math.exp(-step / 250) +
+                                (variables['run'] == 'run-2' ? 0.18 : 0.12) +
+                                0.015 * math.sin(step / 17),
+                            '${key}Min':
+                                0.8 * math.exp(-step / 250) +
+                                (variables['run'] == 'run-2' ? 0.17 : 0.11),
+                            '${key}Max':
+                                0.8 * math.exp(-step / 250) +
+                                (variables['run'] == 'run-2' ? 0.2 : 0.14),
+                          },
+                        },
+                    ];
+                  }).toList(),
+            },
+          },
+        };
       case 'SampledHistoryPage':
         return {
           'project': {

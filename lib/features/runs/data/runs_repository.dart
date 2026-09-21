@@ -181,16 +181,64 @@ class RunsRepository {
     );
   }
 
+  /// Full-fidelity history for chart rendering, bucketed server-side along
+  /// [xAxis] as the web does. Each point holds the bucket's average as the
+  /// value and its minimum and maximum as the band. One series per key.
+  Future<List<MetricSeries>> getBucketedHistory({
+    required String entity,
+    required String project,
+    required String runName,
+    required List<String> keys,
+    required String xAxis,
+  }) async {
+    final data = await _client.query(
+      MobileQueries.bucketedHistory,
+      variables: {
+        'entity': entity,
+        'project': project,
+        'run': runName,
+        'specs': [
+          jsonEncode({'keys': keys, 'samples': 300, 'xAxis': xAxis}),
+        ],
+      },
+    );
+    final run = (data['project'] as Map)['run'] as Map<String, dynamic>;
+    final rows = ((run['bucketedHistory'] as List?)?.firstOrNull as List? ??
+            const [])
+        .map(_sampledHistoryRowAsMap)
+        .toList(growable: false);
+    return keys.map((key) {
+      final points = <MetricPoint>[];
+      for (final row in rows) {
+        final value = row['${key}Avg'];
+        final x = row['${xAxis}Avg'];
+        final low = row['${key}Min'];
+        final high = row['${key}Max'];
+        if (value is! num || !value.isFinite || x is! num || !x.isFinite) {
+          continue;
+        }
+        points.add(
+          MetricPoint(
+            step: x,
+            value: value.toDouble(),
+            // Wall time arrives in seconds; the chart formats milliseconds.
+            x: (xAxis == '_timestamp' ? x * 1000 : x).toDouble(),
+            low: low is num && low.isFinite ? low.toDouble() : null,
+            high: high is num && high.isFinite ? high.toDouble() : null,
+          ),
+        );
+      }
+      return MetricSeries(key: key, points: points);
+    }).toList();
+  }
+
   /// Get sampled history for chart rendering.
-  /// Returns a list of MetricSeries, one per requested key. [xKey] names a
-  /// history key fetched with each metric as a custom X axis; rows without it
-  /// are dropped, matching the web's same-step requirement.
+  /// Returns a list of MetricSeries, one per requested key.
   Future<List<MetricSeries>> getSampledHistory({
     required String entity,
     required String project,
     required String runName,
     required List<String> keys,
-    String? xKey,
     int samples = 500,
   }) async {
     final requestedKeys = keys
@@ -198,11 +246,10 @@ class RunsRepository {
         .toList(growable: false);
     if (requestedKeys.isEmpty) return [];
 
-    final axisKeys = {..._chartAxisKeys, if (xKey != null) xKey};
     final specs = requestedKeys
         .map(
           (key) => jsonEncode({
-            'keys': [...axisKeys, if (!axisKeys.contains(key)) key],
+            'keys': [..._chartAxisKeys, key],
             'samples': samples,
           }),
         )
@@ -231,8 +278,6 @@ class RunsRepository {
         final map = _sampledHistoryRowAsMap(rows[index]);
         final value = map[key];
         if (value is! num) continue;
-        final x = xKey == null ? null : map[xKey];
-        if (xKey != null && x is! num) continue;
 
         final rawStep = map['_step'];
         final step = rawStep is num ? rawStep : index;
@@ -250,7 +295,6 @@ class RunsRepository {
             step: step,
             value: value.toDouble(),
             timestamp: timestamp,
-            x: x is num ? x.toDouble() : null,
           ),
         );
       }

@@ -33,7 +33,6 @@ class RecordingRunsRepository extends RunsRepository {
     required String project,
     required String runName,
     required List<String> keys,
-    String? xKey,
     int samples = 500,
   }) async {
     requestedKeys = [...keys];

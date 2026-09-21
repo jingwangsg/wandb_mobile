@@ -15,10 +15,13 @@ been verified; see [reference and acceptance notes](docs/android-upgrade.md).
   limit and per-run eye toggles.
 - Run Charts, Overview, and Logs; configuration, hardware metadata, files,
   searchable/downloadable logs, and confirmed run termination.
-- Training charts from sampled history and hardware charts from system events.
-  Metric-name regex search, favorites, full-screen charts, zoom, trackballs,
-  TWEMA smoothing, logarithmic scale, X axis by step, relative or wall time,
-  or any history key, and per-metric or scope-wide axis settings.
+- Training charts use the web's full-fidelity bucketed history: the server
+  buckets every logged row along the chosen X axis and each bucket draws its
+  average line inside a min-to-max band, so spikes stay visible. Hardware
+  charts come from system events. Metric-name regex search, favorites,
+  full-screen charts, zoom, trackballs, TWEMA smoothing, logarithmic scale,
+  X axis by step, relative or wall time, or any history key, and per-metric
+  or scope-wide X/Y ranges.
 - Line plot settings and run selection default to the signed-in user's W&B web
   workspace for the project (X axis, x/y ranges, smoothing, log scale, run
   selection, max runs). Settings changed in the app override the web values
