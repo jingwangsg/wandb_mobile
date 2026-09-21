@@ -169,6 +169,10 @@ class AppFixtureClient extends GraphqlClient {
             'runs': {'historyKeys': historyKeys},
           },
         };
+      case 'MobileWorkspaceViews':
+        return {
+          'project': {'allViews': connection([])},
+        };
       case 'SampledHistoryPage':
         return {
           'project': {

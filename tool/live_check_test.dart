@@ -98,6 +98,21 @@ void main() {
             ),
             false,
           );
+          final workspace = await runs.getWorkspaceSettings(
+            entity: entity,
+            project: project,
+            username: container.read(authProvider).user!.username,
+          );
+          expect(workspace, isNotNull);
+          final runtimeAxis = await runs.getSampledHistory(
+            entity: entity,
+            project: project,
+            runName: run.name,
+            keys: [metric],
+            xKey: '_runtime',
+          );
+          expect(runtimeAxis.single.points, isNotEmpty);
+          expect(runtimeAxis.single.points.every((p) => p.x != null), true);
           final systemSeries = await container.read(
             runSystemSeriesProvider(
               RunRef(entity: entity, project: project, runName: run.name),
@@ -127,11 +142,15 @@ void main() {
               perPage: 100,
             );
             for (final candidate in page.items) {
-              if (!comparisonRuns.contains(candidate.name)) {
-                await container
-                    .read(mobilePreferencesProvider.notifier)
-                    .toggleRun('$entity/$project', candidate.name);
-              }
+              // Explicit values on both sides so the web workspace's own run
+              // selection cannot change which runs the comparison draws.
+              await container
+                  .read(mobilePreferencesProvider.notifier)
+                  .setRunVisible(
+                    '$entity/$project',
+                    candidate.name,
+                    comparisonRuns.contains(candidate.name),
+                  );
             }
             if (!page.hasNextPage) break;
             if (page.endCursor == null || page.endCursor == cursor)
@@ -181,6 +200,9 @@ void main() {
             'numLogLines': logs.lines.length,
             'hasOlderLogs': logs.hasPreviousPage,
             'numSystemRows': system.length,
+            'workspaceMaxRuns': workspace?.maxRuns,
+            'workspacePanelOverrides': workspace?.panelOverrides.length,
+            'numRuntimeAxisPoints': runtimeAxis.single.points.length,
             'checkedAt': DateTime.now().toUtc().toIso8601String(),
           };
           await Directory('build/review').create(recursive: true);

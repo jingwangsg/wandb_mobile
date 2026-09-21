@@ -1,5 +1,6 @@
 class MetricChartRule {
   const MetricChartRule({
+    this.xAxis = '_step',
     this.smoothing = 0,
     this.logScale = false,
     this.useAutoMin = true,
@@ -14,6 +15,9 @@ class MetricChartRule {
 
   static const defaults = MetricChartRule();
 
+  /// W&B X-axis key: `_step`, `_runtime`, `_absolute_runtime`, `_timestamp`,
+  /// or any numeric history key.
+  final String xAxis;
   final double smoothing;
   final bool logScale;
   final bool useAutoMin;
@@ -31,6 +35,7 @@ class MetricChartRule {
   double? get resolvedXMax => useAutoXMax ? null : xMax;
 
   MetricChartRule copyWith({
+    String? xAxis,
     double? smoothing,
     bool? logScale,
     bool? useAutoMin,
@@ -47,6 +52,7 @@ class MetricChartRule {
     bool clearXMax = false,
   }) {
     return MetricChartRule(
+      xAxis: xAxis ?? this.xAxis,
       smoothing: smoothing ?? this.smoothing,
       logScale: logScale ?? this.logScale,
       useAutoMin: useAutoMin ?? this.useAutoMin,
@@ -62,6 +68,7 @@ class MetricChartRule {
 
   Map<String, dynamic> toJson() {
     return {
+      'xAxis': xAxis,
       'smoothing': smoothing,
       'logScale': logScale,
       'useAutoMin': useAutoMin,
@@ -77,6 +84,7 @@ class MetricChartRule {
 
   factory MetricChartRule.fromJson(Map<String, dynamic> json) {
     return MetricChartRule(
+      xAxis: json['xAxis'] as String? ?? '_step',
       smoothing: (json['smoothing'] as num?)?.toDouble() ?? 0,
       logScale: json['logScale'] as bool? ?? false,
       useAutoMin: json['useAutoMin'] as bool? ?? true,
@@ -94,6 +102,7 @@ class MetricChartRule {
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
     return other is MetricChartRule &&
+        other.xAxis == xAxis &&
         other.smoothing == smoothing &&
         other.logScale == logScale &&
         other.useAutoMin == useAutoMin &&
@@ -108,6 +117,7 @@ class MetricChartRule {
 
   @override
   int get hashCode => Object.hash(
+    xAxis,
     smoothing,
     logScale,
     useAutoMin,

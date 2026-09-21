@@ -12,14 +12,14 @@ class MetricChartCard extends StatelessWidget {
     required this.rule,
     required this.onRuleChanged,
     this.onExpand,
-    this.xAxisMode = XAxisMode.step,
+    this.xAxis = '_step',
   });
 
   final MetricSeries series;
   final MetricChartRule rule;
   final ValueChanged<MetricChartRule> onRuleChanged;
   final VoidCallback? onExpand;
-  final XAxisMode xAxisMode;
+  final String xAxis;
 
   @override
   Widget build(BuildContext context) {
@@ -88,7 +88,7 @@ class MetricChartCard extends StatelessWidget {
                       key: Key('metric-chart-${series.key}'),
                       series: [series],
                       smoothing: rule.smoothing,
-                      xAxisMode: xAxisMode,
+                      xAxis: xAxis,
                       yAxisMin: rule.resolvedMin,
                       yAxisMax: rule.resolvedMax,
                       showLegend: false,

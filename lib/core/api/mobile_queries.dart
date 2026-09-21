@@ -65,6 +65,16 @@ class MobileQueries {
     }
   ''';
 
+  static const workspaceViews = r'''
+    query MobileWorkspaceViews($entity: String!, $project: String!, $username: String!) {
+      project(entityName: $entity, name: $project) {
+        allViews(viewType: "project-view", userName: $username) {
+          edges { node { id name spec } }
+        }
+      }
+    }
+  ''';
+
   static const logs = r'''
     query MobileRunLogs($entity: String!, $project: String!, $run: String!,
                         $before: String, $after: String, $first: Int, $last: Int) {

@@ -71,7 +71,129 @@ void main() {
     });
   });
 
+  group('RunsRepository.getWorkspaceSettings', () {
+    test(
+      'returns the personal workspace and null when there is none',
+      () async {
+        final client = RecordingGraphqlClient(
+          (_, __) async => {
+            'project': {
+              'allViews': {
+                'edges': [
+                  {
+                    'node': {
+                      'id': 'v',
+                      'name': 'nw-abc-v',
+                      'spec': jsonEncode({
+                        'section': {
+                          'workspaceSettings': {
+                            'linePlot': {'xAxis': '_runtime'},
+                          },
+                        },
+                      }),
+                    },
+                  },
+                  {
+                    'node': {
+                      'id': 'w',
+                      'name': 'nw-nwuseralice-w',
+                      'spec': jsonEncode({
+                        'section': {
+                          'workspaceSettings': {
+                            'linePlot': {'xAxis': 'epoch', 'maxRuns': 3},
+                          },
+                        },
+                      }),
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        );
+        final settings = await RunsRepository(client).getWorkspaceSettings(
+          entity: 'entity',
+          project: 'project',
+          username: 'alice',
+        );
+        expect(client.lastVariables, {
+          'entity': 'entity',
+          'project': 'project',
+          'username': 'alice',
+        });
+        expect(settings?.linePlot['xAxis'], 'epoch');
+        expect(settings?.maxRuns, 3);
+
+        final empty = RunsRepository(
+          RecordingGraphqlClient(
+            (_, __) async => {
+              'project': {
+                'allViews': {'edges': const []},
+              },
+            },
+          ),
+        );
+        expect(
+          await empty.getWorkspaceSettings(
+            entity: 'entity',
+            project: 'project',
+            username: 'alice',
+          ),
+          isNull,
+        );
+      },
+    );
+  });
+
   group('RunsRepository.getSampledHistory', () {
+    test(
+      'requests a custom X-axis key with each metric and keeps its value',
+      () async {
+        final client = RecordingGraphqlClient((_, variables) async {
+          expect((variables!['specs'] as List<dynamic>).cast<String>(), [
+            jsonEncode({
+              'keys': ['_step', '_timestamp', 'epoch', 'loss'],
+              'samples': 500,
+            }),
+          ]);
+          return {
+            'project': {
+              'run': {
+                'sampledHistory': [
+                  [
+                    {
+                      '_step': 0,
+                      '_timestamp': 1700000000,
+                      'epoch': 1,
+                      'loss': 0.9,
+                    },
+                    {'_step': 1, '_timestamp': 1700000001, 'loss': 0.8},
+                    {
+                      '_step': 2,
+                      '_timestamp': 1700000002,
+                      'epoch': 2,
+                      'loss': 0.7,
+                    },
+                  ],
+                ],
+              },
+            },
+          };
+        });
+        final series = await RunsRepository(client).getSampledHistory(
+          entity: 'entity',
+          project: 'project',
+          runName: 'run',
+          keys: ['loss'],
+          xKey: 'epoch',
+        );
+        expect(series.single.points.map((point) => (point.step, point.x)), [
+          (0, 1.0),
+          (2, 2.0),
+        ], reason: 'rows without the X key are dropped, as on the web');
+      },
+    );
+
     test(
       'requests one sampled history spec per key and preserves sampled steps',
       () async {

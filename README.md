@@ -8,13 +8,21 @@ been verified; see [reference and acceptance notes](docs/android-upgrade.md).
 ## Implemented workflows
 
 - Five tabs: Runs, Projects, ARIA, Notifications, and Profile.
-- Personal/team project browsing, search, project stars, run visibility,
-  pagination, and automatic refresh.
+- Personal/team project browsing, search, project stars, pagination, and
+  automatic refresh.
+- Project panels follow the Runs tab's search, filters, and sort, draw the
+  first visible runs (10 by default), and offer a visible-runs sheet with a
+  limit and per-run eye toggles.
 - Run Charts, Overview, and Logs; configuration, hardware metadata, files,
   searchable/downloadable logs, and confirmed run termination.
 - Training charts from sampled history and hardware charts from system events.
   Metric-name regex search, favorites, full-screen charts, zoom, trackballs,
-  TWEMA smoothing, logarithmic scale, and per-metric or scope-wide axis settings.
+  TWEMA smoothing, logarithmic scale, X axis by step, relative or wall time,
+  or any history key, and per-metric or scope-wide axis settings.
+- Line plot settings and run selection default to the signed-in user's W&B web
+  workspace for the project (X axis, x/y ranges, smoothing, log scale, run
+  selection, max runs). Settings changed in the app override the web values
+  until the plot is reset.
 - Image history with step selection and a full-screen gallery.
 - ARIA conversations using W&B's agent API, including history, continuation,
   clarification questions, cancellation, feedback, and references. Availability

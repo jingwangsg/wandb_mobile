@@ -328,6 +328,7 @@ void main() {
               rule: const MetricChartRule(smoothing: 0.8),
               resetRule: const MetricChartRule(smoothing: 0.6),
               scope: 'Applies to this line plot',
+              xAxisOptions: const [],
               onChanged: (rule) => saved = rule,
               onReset: () => resets++,
             ),

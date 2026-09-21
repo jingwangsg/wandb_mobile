@@ -9,6 +9,7 @@ import '../../../core/models/paginated.dart';
 import '../../../core/models/run.dart';
 import '../../../core/models/run_file.dart';
 import '../../../core/models/run_log.dart';
+import '../../charts/models/workspace_settings.dart';
 
 class RunsRepository {
   const RunsRepository(this._client);
@@ -76,6 +77,29 @@ class RunsRepository {
     final value = data['project']?['runs']?['historyKeys'];
     if (value is String) return jsonDecode(value) as Map<String, dynamic>;
     return Map<String, dynamic>.from(value as Map? ?? {});
+  }
+
+  /// The user's personal web workspace for a project, or null when none exists.
+  Future<WorkspaceSettings?> getWorkspaceSettings({
+    required String entity,
+    required String project,
+    required String username,
+  }) async {
+    final data = await _client.query(
+      MobileQueries.workspaceViews,
+      variables: {'entity': entity, 'project': project, 'username': username},
+    );
+    final edges =
+        (data['project'] as Map?)?['allViews']?['edges'] as List? ?? const [];
+    for (final edge in edges) {
+      final node = edge['node'] as Map;
+      // Personal workspaces are named nw-nwuser<name>-w; saved views end in -v.
+      if (!'${node['name']}'.endsWith('-w')) continue;
+      return WorkspaceSettings.fromSpec(
+        Map<String, dynamic>.from(jsonDecode(node['spec'] as String) as Map),
+      );
+    }
+    return null;
   }
 
   Future<RunLogPage> getLogs({
@@ -158,12 +182,15 @@ class RunsRepository {
   }
 
   /// Get sampled history for chart rendering.
-  /// Returns a list of MetricSeries, one per requested key.
+  /// Returns a list of MetricSeries, one per requested key. [xKey] names a
+  /// history key fetched with each metric as a custom X axis; rows without it
+  /// are dropped, matching the web's same-step requirement.
   Future<List<MetricSeries>> getSampledHistory({
     required String entity,
     required String project,
     required String runName,
     required List<String> keys,
+    String? xKey,
     int samples = 500,
   }) async {
     final requestedKeys = keys
@@ -171,10 +198,11 @@ class RunsRepository {
         .toList(growable: false);
     if (requestedKeys.isEmpty) return [];
 
+    final axisKeys = {..._chartAxisKeys, if (xKey != null) xKey};
     final specs = requestedKeys
         .map(
           (key) => jsonEncode({
-            'keys': [..._chartAxisKeys, key],
+            'keys': [...axisKeys, if (!axisKeys.contains(key)) key],
             'samples': samples,
           }),
         )
@@ -203,6 +231,8 @@ class RunsRepository {
         final map = _sampledHistoryRowAsMap(rows[index]);
         final value = map[key];
         if (value is! num) continue;
+        final x = xKey == null ? null : map[xKey];
+        if (xKey != null && x is! num) continue;
 
         final rawStep = map['_step'];
         final step = rawStep is num ? rawStep : index;
@@ -220,6 +250,7 @@ class RunsRepository {
             step: step,
             value: value.toDouble(),
             timestamp: timestamp,
+            x: x is num ? x.toDouble() : null,
           ),
         );
       }

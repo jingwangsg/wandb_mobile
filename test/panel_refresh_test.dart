@@ -10,6 +10,7 @@ import 'package:wandb_mobile/core/models/resource_refs.dart';
 import 'package:wandb_mobile/core/models/run.dart';
 import 'package:wandb_mobile/features/charts/presentation/panels_view.dart';
 import 'package:wandb_mobile/features/charts/presentation/widgets/wandb_line_chart.dart';
+import 'package:wandb_mobile/features/charts/providers/panel_providers.dart';
 import 'package:wandb_mobile/features/runs/data/runs_repository.dart';
 import 'package:wandb_mobile/features/runs/providers/runs_providers.dart';
 
@@ -56,6 +57,7 @@ class SlowProjectRepository extends RunsRepository {
     required String project,
     required String runName,
     required List<String> keys,
+    String? xKey,
     int samples = 500,
   }) async {
     histories++;
@@ -88,6 +90,7 @@ void main() {
         overrides: [
           ...mobileTestOverrides(),
           runsRepositoryProvider.overrideWithValue(repository),
+          workspaceSettingsProvider.overrideWith((ref, _) async => null),
         ],
         child: const MaterialApp(
           home: Scaffold(
@@ -111,8 +114,12 @@ void main() {
     repository.ready.complete();
     await tester.pumpAndSettle();
     final chart = tester.widget<WandbLineChart>(find.byType(WandbLineChart));
-    expect(chart.series.length, 100);
-    expect(repository.histories, 100);
+    expect(
+      chart.series.length,
+      10,
+      reason: 'without a web workspace the first ten runs are drawn',
+    );
+    expect(repository.histories, 10);
     await tester.pumpWidget(const SizedBox.shrink());
     expect(tester.takeException(), isNull);
   });

@@ -5,7 +5,6 @@ import '../../../../core/utils/metric_grouping.dart';
 import '../../models/metric_chart_rule.dart';
 import 'expanded_chart_screen.dart';
 import 'metric_chart_card.dart';
-import 'wandb_line_chart.dart';
 
 /// Displays metric charts grouped by prefix in collapsible sections.
 class GroupedChartArea extends StatelessWidget {
@@ -16,7 +15,7 @@ class GroupedChartArea extends StatelessWidget {
     required this.collapsedGroups,
     required this.onToggleGroup,
     required this.onRuleChanged,
-    this.xAxisMode = XAxisMode.step,
+    this.xAxis = '_step',
   });
 
   final List<MetricSeries> series;
@@ -24,7 +23,7 @@ class GroupedChartArea extends StatelessWidget {
   final Set<String> collapsedGroups;
   final ValueChanged<String> onToggleGroup;
   final void Function(String key, MetricChartRule rule) onRuleChanged;
-  final XAxisMode xAxisMode;
+  final String xAxis;
 
   @override
   Widget build(BuildContext context) {
@@ -88,7 +87,7 @@ class GroupedChartArea extends StatelessWidget {
     return MetricChartCard(
       series: s,
       rule: rule,
-      xAxisMode: xAxisMode,
+      xAxis: xAxis,
       onRuleChanged: (r) => onRuleChanged(s.key, r),
       onExpand: () {
         Navigator.of(context).push(
@@ -97,7 +96,7 @@ class GroupedChartArea extends StatelessWidget {
             builder: (_) => ExpandedChartScreen(
               series: s,
               rule: rule,
-              xAxisMode: xAxisMode,
+              xAxis: xAxis,
               onRuleChanged: (r) => onRuleChanged(s.key, r),
             ),
           ),

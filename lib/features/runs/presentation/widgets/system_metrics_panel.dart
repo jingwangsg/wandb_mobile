@@ -10,7 +10,6 @@ import '../../../../core/widgets/wandb_mark_icon.dart';
 import '../../../charts/models/metric_chart_rule.dart';
 import '../../../charts/models/run_chart_preferences.dart';
 import '../../../charts/presentation/widgets/grouped_chart_area.dart';
-import '../../../charts/presentation/widgets/wandb_line_chart.dart';
 import '../../../charts/providers/chart_preferences_providers.dart';
 import '../../providers/runs_providers.dart';
 import '../../utils/metric_selection.dart';
@@ -46,7 +45,7 @@ class _SystemMetricsPanelState extends ConsumerState<SystemMetricsPanel> {
   List<String> _availableKeys = const [];
   List<_SystemMetricRow> _rows = const [];
   List<MetricSeries> _series = const [];
-  XAxisMode _xAxisMode = XAxisMode.step;
+  String _xAxis = '_step';
   Map<String, Object?>? _lastRequestDetails;
 
   @override
@@ -124,8 +123,7 @@ class _SystemMetricsPanelState extends ConsumerState<SystemMetricsPanel> {
         _rows = dataset.rows;
         _series = nextSeries;
         _rulesByKey = Map.unmodifiable(nextRules);
-        _xAxisMode =
-            dataset.hasTimestamps ? XAxisMode.relativeTime : XAxisMode.step;
+        _xAxis = dataset.hasTimestamps ? '_absolute_runtime' : '_step';
         _selectedKeys
           ..clear()
           ..addAll(nextSelected);
@@ -411,7 +409,7 @@ class _SystemMetricsPanelState extends ConsumerState<SystemMetricsPanel> {
       child: GroupedChartArea(
         series: _series,
         rulesByKey: _rulesByKey,
-        xAxisMode: _xAxisMode,
+        xAxis: _xAxis,
         collapsedGroups: _collapsedChartGroups,
         onToggleGroup: (group) {
           setState(() {

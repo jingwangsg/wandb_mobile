@@ -22,6 +22,7 @@ class StreamRepository extends RunsRepository {
     required String project,
     required String runName,
     required List<String> keys,
+    String? xKey,
     int samples = 500,
   }) async {
     requestedMetrics.addAll(keys);
@@ -96,6 +97,7 @@ void main() {
           overrides: [
             ...mobileTestOverrides(),
             runsRepositoryProvider.overrideWithValue(repo),
+            workspaceSettingsProvider.overrideWith((ref, _) async => null),
           ],
           child: MaterialApp(
             home: Scaffold(

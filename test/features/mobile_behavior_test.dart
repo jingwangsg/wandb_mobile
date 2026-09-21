@@ -67,10 +67,11 @@ void main() {
       final first = MobilePreferencesNotifier(store, 'account-a');
       addTearDown(first.dispose);
       await first.toggleMetric('team/project', 'train/loss');
-      await first.toggleRun('team/project', 'run-1');
+      await first.setRunVisible('team/project', 'run-1', false);
+      await first.setVisibleRunLimit('team/project', 20);
       await first.setRule(
         'train/loss',
-        const MetricChartRule(logScale: true, smoothing: 0.7),
+        const MetricChartRule(logScale: true, smoothing: 0.7, xAxis: 'epoch'),
       );
       await first.setTheme(ThemeMode.light);
       final restored = MobilePreferencesNotifier(store, 'account-a');
@@ -78,20 +79,42 @@ void main() {
       addTearDown(restored.dispose);
       addTearDown(other.dispose);
       expect(restored.state.starredMetrics, first.state.starredMetrics);
-      expect(restored.state.hiddenRuns['team/project'], {'run-1'});
-      expect(
-        restored.state.ruleFor('other-project', 'train/loss').logScale,
-        true,
-      );
+      expect(restored.state.runVisibility['team/project'], {'run-1': false});
+      expect(restored.state.visibleRunLimits['team/project'], 20);
+      final rule = restored.state.ruleFor('other-project', 'train/loss', null);
+      expect(rule.logScale, true);
+      expect(rule.xAxis, 'epoch');
       expect(restored.state.theme, ThemeMode.light);
       expect(other.state.starredMetrics, isEmpty);
-      expect(other.state.hiddenRuns, isEmpty);
+      expect(other.state.runVisibility, isEmpty);
+      await first.setDefaults(
+        'team/project',
+        const MetricChartRule(smoothing: 0.3),
+      );
+      await first.resetDefaults('team/project');
+      expect(first.state.defaultRules.containsKey('team/project'), false);
       expect(
         MobilePreferences.fromJson(restored.state.toJson()).toJson(),
         restored.state.toJson(),
       );
     },
   );
+
+  test('preferences saved before 2.0.2 migrate hidden runs to visibility', () {
+    final migrated = MobilePreferences.fromJson({
+      'hiddenRuns': {
+        'team/project': ['run-1'],
+      },
+      'chartRules': {
+        'train/loss': {'smoothing': 0.5},
+      },
+    });
+    expect(migrated.runVisibility, {
+      'team/project': {'run-1': false},
+    });
+    expect(migrated.toJson().containsKey('hiddenRuns'), false);
+    expect(migrated.ruleFor('team/project', 'train/loss', null).xAxis, '_step');
+  });
 
   test(
     'notification taps are scoped to the signed-in account and escaped paths',

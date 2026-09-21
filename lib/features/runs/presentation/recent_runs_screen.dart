@@ -189,8 +189,13 @@ class RunCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final preferences = ref.watch(mobilePreferencesProvider);
-    final hidden =
-        preferences.hiddenRuns[project.path]?.contains(run.name) == true;
+    final visible = isRunVisible(
+      preferences.runVisibility[project.path],
+      showVisibility
+          ? ref.watch(workspaceSettingsProvider(project)).valueOrNull
+          : null,
+      run.name,
+    );
     final history = run.historyKeys?['keys'] as Map? ?? {};
     final available =
         <String>{
@@ -264,15 +269,15 @@ class RunCard extends ConsumerWidget {
                   if (showVisibility)
                     IconButton(
                       tooltip:
-                          hidden
-                              ? 'Show run in panels'
-                              : 'Hide run from panels',
+                          visible
+                              ? 'Hide run from panels'
+                              : 'Show run in panels',
                       onPressed:
                           () => ref
                               .read(mobilePreferencesProvider.notifier)
-                              .toggleRun(project.path, run.name),
+                              .setRunVisible(project.path, run.name, !visible),
                       icon: WandbIcon(
-                        hidden ? 'not_visible' : 'visible',
+                        visible ? 'visible' : 'not_visible',
                         size: 20,
                       ),
                     ),

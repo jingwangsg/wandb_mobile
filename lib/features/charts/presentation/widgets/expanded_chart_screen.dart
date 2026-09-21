@@ -11,13 +11,13 @@ class ExpandedChartScreen extends StatefulWidget {
     required this.series,
     required this.rule,
     required this.onRuleChanged,
-    this.xAxisMode = XAxisMode.step,
+    this.xAxis = '_step',
   });
 
   final MetricSeries series;
   final MetricChartRule rule;
   final ValueChanged<MetricChartRule> onRuleChanged;
-  final XAxisMode xAxisMode;
+  final String xAxis;
 
   @override
   State<ExpandedChartScreen> createState() => _ExpandedChartScreenState();
@@ -53,7 +53,7 @@ class _ExpandedChartScreenState extends State<ExpandedChartScreen> {
               child: WandbLineChart(
                 series: [widget.series],
                 smoothing: _rule.smoothing,
-                xAxisMode: widget.xAxisMode,
+                xAxis: widget.xAxis,
                 yAxisMin: _rule.resolvedMin,
                 yAxisMax: _rule.resolvedMax,
                 xAxisMin: _rule.resolvedXMin,

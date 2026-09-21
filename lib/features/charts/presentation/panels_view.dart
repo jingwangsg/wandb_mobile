@@ -16,6 +16,7 @@ import '../providers/panel_providers.dart';
 import '../models/metric_chart_rule.dart';
 import 'widgets/line_plot_settings.dart';
 import 'widgets/image_metric_panel.dart';
+import 'widgets/visible_runs_sheet.dart';
 import 'widgets/wandb_line_chart.dart';
 
 class PanelsView extends ConsumerStatefulWidget {
@@ -100,6 +101,12 @@ class _PanelsViewState extends ConsumerState<PanelsView> {
   @override
   Widget build(BuildContext context) {
     final preferences = ref.watch(mobilePreferencesProvider);
+    final visibleRuns =
+        widget.run == null
+            ? ref.watch(visibleRunsProvider(widget.project)).valueOrNull
+            : null;
+    final workspace =
+        ref.watch(workspaceSettingsProvider(widget.project)).valueOrNull;
     final imageMetrics = <String>{};
     for (final entry
         in (widget.run?.historyKeys?['keys'] as Map? ?? {}).entries) {
@@ -164,6 +171,24 @@ class _PanelsViewState extends ConsumerState<PanelsView> {
                   onChanged: (value) => setState(() => _starredOnly = value),
                 ),
               ),
+              if (widget.run == null)
+                TextButton.icon(
+                  onPressed:
+                      () => showModalBottomSheet<void>(
+                        context: context,
+                        isScrollControlled: true,
+                        useSafeArea: true,
+                        builder:
+                            (_) => VisibleRunsSheet(project: widget.project),
+                      ),
+                  icon: const WandbIcon('visible', size: 18),
+                  label: Text(
+                    visibleRuns == null
+                        ? 'Runs'
+                        : '${visibleRuns.visible.length} of '
+                            '${visibleRuns.totalCount ?? visibleRuns.candidates.length} runs',
+                  ),
+                ),
               IconButton(
                 tooltip: 'Line plot settings',
                 icon: const WandbIcon('settings_parameters'),
@@ -173,13 +198,15 @@ class _PanelsViewState extends ConsumerState<PanelsView> {
                       useSafeArea: true,
                       builder:
                           (_) => LinePlotSettings(
-                            rule:
-                                preferences.defaultRules[scope] ??
-                                preferences.ruleFor(scope, ''),
+                            rule: preferences.scopeRuleFor(scope, workspace),
+                            resetRule:
+                                workspace?.workspaceDefaults ??
+                                MetricChartRule.defaults,
                             scope:
                                 widget.run == null
                                     ? 'Applies to all line plots in this project'
                                     : 'Applies to all line plots in this run',
+                            xAxisOptions: keys.valueOrNull ?? const [],
                             onChanged:
                                 (rule) => ref
                                     .read(mobilePreferencesProvider.notifier)
@@ -187,10 +214,7 @@ class _PanelsViewState extends ConsumerState<PanelsView> {
                             onReset:
                                 () => ref
                                     .read(mobilePreferencesProvider.notifier)
-                                    .setDefaults(
-                                      scope,
-                                      const MetricChartRule(),
-                                    ),
+                                    .resetDefaults(scope),
                           ),
                     ),
               ),
@@ -259,6 +283,7 @@ class _PanelsViewState extends ConsumerState<PanelsView> {
                       )
                       .state++;
                   ref.invalidate(projectMetricKeysProvider(widget.project));
+                  ref.invalidate(workspaceSettingsProvider(widget.project));
                   if (widget.run != null) {
                     ref.invalidate(
                       runSystemSeriesProvider(
@@ -476,7 +501,8 @@ class MetricPanelCard extends ConsumerWidget {
     final preferences = ref.watch(mobilePreferencesProvider);
     final starred = isMetricStarred(preferences, project, metric);
     final scope = runName == null ? project.path : '${project.path}/$runName';
-    final rule = preferences.ruleFor(scope, metric);
+    final workspace = ref.watch(workspaceSettingsProvider(project)).valueOrNull;
+    final rule = preferences.ruleFor(scope, metric, workspace);
     final request = (project: project, runName: runName, metric: metric);
     final series =
         systemSeries == null
@@ -545,8 +571,7 @@ class MetricPanelCard extends ConsumerWidget {
                 error:
                     (error, _) => Center(
                       child: TextButton(
-                        onPressed:
-                            () => ref.invalidate(panelSeriesProvider(request)),
+                        onPressed: () => refreshPanelSeries(ref, request),
                         child: const Text('Unable to load chart · Retry'),
                       ),
                     ),
@@ -555,6 +580,9 @@ class MetricPanelCard extends ConsumerWidget {
                       series: lines,
                       smoothing: rule.smoothing,
                       logScale: rule.logScale,
+                      xAxis: rule.xAxis,
+                      xAxisMin: rule.resolvedXMin,
+                      xAxisMax: rule.resolvedXMax,
                       showLegend: false,
                       yAxisMin: rule.resolvedMin,
                       yAxisMax: rule.resolvedMax,
@@ -582,7 +610,6 @@ class PanelDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _PanelDetailScreenState extends ConsumerState<PanelDetailScreen> {
-  XAxisMode _axis = XAxisMode.step;
   Timer? _poll;
 
   @override
@@ -601,7 +628,7 @@ class _PanelDetailScreenState extends ConsumerState<PanelDetailScreen> {
     final request = widget.request;
     if (widget.systemSeries == null) {
       if (ref.read(panelSeriesProvider(request)).isLoading) return;
-      ref.invalidate(panelSeriesProvider(request));
+      refreshPanelSeries(ref, request);
     } else {
       ref.invalidate(
         runSystemSeriesProvider(
@@ -634,7 +661,12 @@ class _PanelDetailScreenState extends ConsumerState<PanelDetailScreen> {
         request.runName == null
             ? request.project.path
             : '${request.project.path}/${request.runName}';
-    final rule = preferences.ruleFor(scope, request.metric);
+    final workspace =
+        ref.watch(workspaceSettingsProvider(request.project)).valueOrNull;
+    final rule = preferences.ruleFor(scope, request.metric, workspace);
+    final metricKeys =
+        ref.watch(projectMetricKeysProvider(request.project)).valueOrNull ??
+        const <String>[];
     final series =
         widget.systemSeries == null
             ? ref.watch(panelSeriesProvider(request))
@@ -709,17 +741,14 @@ class _PanelDetailScreenState extends ConsumerState<PanelDetailScreen> {
                             title: 'Unable to load chart',
                             message: '$error',
                             icon: 'warning',
-                            onRetry:
-                                () => ref.invalidate(
-                                  panelSeriesProvider(request),
-                                ),
+                            onRetry: _refresh,
                           ),
                       data:
                           (lines) => WandbLineChart(
                             series: lines,
                             smoothing: rule.smoothing,
                             logScale: rule.logScale,
-                            xAxisMode: _axis,
+                            xAxis: rule.xAxis,
                             xAxisMin: rule.resolvedXMin,
                             xAxisMax: rule.resolvedXMax,
                             yAxisMin: rule.resolvedMin,
@@ -734,20 +763,51 @@ class _PanelDetailScreenState extends ConsumerState<PanelDetailScreen> {
               padding: const EdgeInsets.all(16),
               child: Row(
                 children: [
-                  DropdownButton<XAxisMode>(
-                    value: _axis,
-                    items:
-                        XAxisMode.values
-                            .map(
-                              (mode) => DropdownMenuItem(
-                                value: mode,
-                                child: Text(mode.label),
-                              ),
-                            )
-                            .toList(),
-                    onChanged: (value) {
-                      if (value != null) setState(() => _axis = value);
-                    },
+                  Flexible(
+                    child: TextButton.icon(
+                      onPressed:
+                          () => showModalBottomSheet<void>(
+                            context: context,
+                            isScrollControlled: true,
+                            useSafeArea: true,
+                            builder:
+                                (_) => XAxisPicker(
+                                  selected: rule.xAxis,
+                                  options: metricKeys,
+                                  onSelected: (value) {
+                                    // Read at tap time: the workspace may
+                                    // have arrived since this screen built.
+                                    final current = ref
+                                        .read(mobilePreferencesProvider)
+                                        .ruleFor(
+                                          scope,
+                                          request.metric,
+                                          ref
+                                              .read(
+                                                workspaceSettingsProvider(
+                                                  request.project,
+                                                ),
+                                              )
+                                              .valueOrNull,
+                                        );
+                                    ref
+                                        .read(
+                                          mobilePreferencesProvider.notifier,
+                                        )
+                                        .setRule(
+                                          request.metric,
+                                          current.copyWith(xAxis: value),
+                                        );
+                                  },
+                                ),
+                          ),
+                      icon: const WandbIcon('line_plot', size: 18),
+                      label: Text(
+                        'X: ${xAxisLabel(rule.xAxis)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
                   ),
                   const Spacer(),
                   IconButton(
@@ -766,9 +826,12 @@ class _PanelDetailScreenState extends ConsumerState<PanelDetailScreen> {
                               (_) => LinePlotSettings(
                                 rule: rule,
                                 scope: 'Applies to this line plot',
-                                resetRule:
-                                    preferences.defaultRules[scope] ??
-                                    MetricChartRule.defaults,
+                                xAxisOptions: metricKeys,
+                                resetRule: preferences.inheritedRuleFor(
+                                  scope,
+                                  request.metric,
+                                  workspace,
+                                ),
                                 onChanged:
                                     (value) => ref
                                         .read(

@@ -6,35 +6,67 @@ import 'package:hive_flutter/hive_flutter.dart';
 
 import '../../features/auth/providers/auth_providers.dart';
 import '../../features/charts/models/metric_chart_rule.dart';
+import '../../features/charts/models/workspace_settings.dart';
 
 class MobilePreferences {
   const MobilePreferences({
     this.theme = ThemeMode.system,
     this.starredMetrics = const {},
-    this.hiddenRuns = const {},
+    this.runVisibility = const {},
+    this.visibleRunLimits = const {},
     this.chartRules = const {},
     this.defaultRules = const {},
   });
 
   final ThemeMode theme;
   final Set<String> starredMetrics;
-  final Map<String, Set<String>> hiddenRuns;
+
+  /// Project path -> run name -> shown in panels. Runs without an entry follow
+  /// the web workspace's run selection, then default to visible.
+  final Map<String, Map<String, bool>> runVisibility;
+
+  /// Project path -> how many visible runs the project panels draw.
+  final Map<String, int> visibleRunLimits;
   final Map<String, MetricChartRule> chartRules;
   final Map<String, MetricChartRule> defaultRules;
 
-  MetricChartRule ruleFor(String scope, String metric) =>
-      chartRules[metric] ?? defaultRules[scope] ?? MetricChartRule.defaults;
+  /// The project- or run-wide rule: the app's own when set, else the web
+  /// workspace's, else the app defaults. Both have the same reach, so the
+  /// app's explicit choice replaces the web's workspace-wide layer.
+  MetricChartRule scopeRuleFor(String scope, WorkspaceSettings? workspace) =>
+      defaultRules[scope] ??
+      workspace?.workspaceDefaults ??
+      MetricChartRule.defaults;
+
+  /// The rule [metric] inherits before any per-metric rule saved in the app:
+  /// the web's per-panel and section settings for it over [scopeRuleFor].
+  MetricChartRule inheritedRuleFor(
+    String scope,
+    String metric,
+    WorkspaceSettings? workspace,
+  ) {
+    final base = scopeRuleFor(scope, workspace);
+    return workspace?.apply(base, metric) ?? base;
+  }
+
+  MetricChartRule ruleFor(
+    String scope,
+    String metric,
+    WorkspaceSettings? workspace,
+  ) => chartRules[metric] ?? inheritedRuleFor(scope, metric, workspace);
 
   MobilePreferences copyWith({
     ThemeMode? theme,
     Set<String>? starredMetrics,
-    Map<String, Set<String>>? hiddenRuns,
+    Map<String, Map<String, bool>>? runVisibility,
+    Map<String, int>? visibleRunLimits,
     Map<String, MetricChartRule>? chartRules,
     Map<String, MetricChartRule>? defaultRules,
   }) => MobilePreferences(
     theme: theme ?? this.theme,
     starredMetrics: starredMetrics ?? this.starredMetrics,
-    hiddenRuns: hiddenRuns ?? this.hiddenRuns,
+    runVisibility: runVisibility ?? this.runVisibility,
+    visibleRunLimits: visibleRunLimits ?? this.visibleRunLimits,
     chartRules: chartRules ?? this.chartRules,
     defaultRules: defaultRules ?? this.defaultRules,
   );
@@ -42,7 +74,8 @@ class MobilePreferences {
   Map<String, dynamic> toJson() => {
     'theme': theme.name,
     'starredMetrics': starredMetrics.toList(),
-    'hiddenRuns': hiddenRuns.map((key, value) => MapEntry(key, value.toList())),
+    'runVisibility': runVisibility,
+    'visibleRunLimits': visibleRunLimits,
     'chartRules': chartRules.map((key, value) => MapEntry(key, value.toJson())),
     'defaultRules': defaultRules.map(
       (key, value) => MapEntry(key, value.toJson()),
@@ -56,8 +89,17 @@ class MobilePreferences {
           orElse: () => ThemeMode.system,
         ),
         starredMetrics: Set<String>.from(json['starredMetrics'] as List? ?? []),
-        hiddenRuns: (json['hiddenRuns'] as Map<String, dynamic>? ?? {}).map(
-          (key, value) => MapEntry(key, Set<String>.from(value as List)),
+        runVisibility: {
+          // Releases before 2.0.2 stored an opt-out `hiddenRuns` list.
+          for (final entry
+              in (json['hiddenRuns'] as Map<String, dynamic>? ?? {}).entries)
+            entry.key: {for (final run in entry.value as List) '$run': false},
+          for (final entry
+              in (json['runVisibility'] as Map<String, dynamic>? ?? {}).entries)
+            entry.key: Map<String, bool>.from(entry.value as Map),
+        },
+        visibleRunLimits: Map<String, int>.from(
+          json['visibleRunLimits'] as Map? ?? {},
         ),
         chartRules: (json['chartRules'] as Map<String, dynamic>? ?? {}).map(
           (key, value) => MapEntry(
@@ -104,19 +146,31 @@ class MobilePreferencesNotifier extends StateNotifier<MobilePreferences> {
     return _save(state.copyWith(starredMetrics: stars));
   }
 
-  Future<void> toggleRun(String project, String run) {
-    final hidden = {...?state.hiddenRuns[project]};
-    if (!hidden.remove(run)) hidden.add(run);
-    return _save(
-      state.copyWith(hiddenRuns: {...state.hiddenRuns, project: hidden}),
-    );
-  }
+  Future<void> setRunVisible(String project, String run, bool visible) => _save(
+    state.copyWith(
+      runVisibility: {
+        ...state.runVisibility,
+        project: {...?state.runVisibility[project], run: visible},
+      },
+    ),
+  );
+
+  Future<void> setVisibleRunLimit(String project, int limit) => _save(
+    state.copyWith(
+      visibleRunLimits: {...state.visibleRunLimits, project: limit},
+    ),
+  );
 
   Future<void> setRule(String metric, MetricChartRule rule) =>
       _save(state.copyWith(chartRules: {...state.chartRules, metric: rule}));
 
   Future<void> setDefaults(String scope, MetricChartRule rule) =>
       _save(state.copyWith(defaultRules: {...state.defaultRules, scope: rule}));
+
+  Future<void> resetDefaults(String scope) {
+    final rules = {...state.defaultRules}..remove(scope);
+    return _save(state.copyWith(defaultRules: rules));
+  }
 
   Future<void> resetRule(String metric) {
     final rules = {...state.chartRules}..remove(metric);

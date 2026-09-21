@@ -40,6 +40,7 @@ class _StreamRepository extends RunsRepository {
     required String project,
     required String runName,
     required List<String> keys,
+    String? xKey,
     int samples = 500,
   }) async {
     requestedMetrics.addAll(keys);
@@ -95,6 +96,7 @@ void main() {
           overrides: [
             ...mobileTestOverrides(),
             runsRepositoryProvider.overrideWithValue(repository),
+            workspaceSettingsProvider.overrideWith((ref, _) async => null),
           ],
         );
         addTearDown(container.dispose);

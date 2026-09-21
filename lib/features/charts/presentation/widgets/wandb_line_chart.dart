@@ -11,7 +11,7 @@ class WandbLineChart extends StatefulWidget {
     super.key,
     required this.series,
     this.smoothing = 0,
-    this.xAxisMode = XAxisMode.step,
+    this.xAxis = '_step',
     this.title,
     this.yAxisMin,
     this.yAxisMax,
@@ -23,7 +23,10 @@ class WandbLineChart extends StatefulWidget {
 
   final List<MetricSeries> series;
   final double smoothing;
-  final XAxisMode xAxisMode;
+
+  /// `_step`, `_absolute_runtime`, `_timestamp`, or a history key whose value
+  /// is held in [MetricPoint.x].
+  final String xAxis;
   final String? title;
   final double? yAxisMin;
   final double? yAxisMax;
@@ -75,7 +78,7 @@ class _WandbLineChartState extends State<WandbLineChart> {
   @override
   void didUpdateWidget(WandbLineChart oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.xAxisMode != widget.xAxisMode ||
+    if (oldWidget.xAxis != widget.xAxis ||
         oldWidget.logScale != widget.logScale) {
       _zoom.reset();
     }
@@ -107,29 +110,30 @@ class _WandbLineChartState extends State<WandbLineChart> {
                       .where((p) => p.timestamp != null)
                       .firstOrNull
                       ?.timestamp;
-              var points =
-                  series.points
-                      .where((p) => p.value.isFinite && p.step.isFinite)
-                      .map(
-                        (point) => MetricPoint(
-                          step: switch (widget.xAxisMode) {
-                            XAxisMode.step => point.step,
-                            XAxisMode.relativeTime =>
-                              origin != null && point.timestamp != null
-                                  ? point.timestamp!
-                                          .difference(origin)
-                                          .inMilliseconds /
-                                      1000
-                                  : point.step,
-                            XAxisMode.wallClock =>
-                              point.timestamp?.millisecondsSinceEpoch ??
-                                  point.step,
-                          },
-                          value: point.value,
-                          timestamp: point.timestamp,
-                        ),
-                      )
-                      .toList();
+              var points = <MetricPoint>[];
+              for (final point in series.points) {
+                if (!point.value.isFinite) continue;
+                final x = switch (widget.xAxis) {
+                  '_step' => point.step.toDouble(),
+                  '_absolute_runtime' =>
+                    origin != null && point.timestamp != null
+                        ? point.timestamp!.difference(origin).inMilliseconds /
+                            1000
+                        : point.step.toDouble(),
+                  '_timestamp' =>
+                    (point.timestamp?.millisecondsSinceEpoch ?? point.step)
+                        .toDouble(),
+                  _ => point.x,
+                };
+                if (x == null || !x.isFinite) continue;
+                points.add(
+                  MetricPoint(
+                    step: x,
+                    value: point.value,
+                    timestamp: point.timestamp,
+                  ),
+                );
+              }
               points = timeWeightedSmoothing(points, widget.smoothing);
               final target =
                   constraints.maxWidth.isFinite
@@ -157,11 +161,11 @@ class _WandbLineChartState extends State<WandbLineChart> {
             final point = args.chartPointInfo.chartPoint;
             if (point == null) return;
             args.chartPointInfo.header =
-                widget.xAxisMode == XAxisMode.wallClock
+                widget.xAxis == '_timestamp'
                     ? DateTime.fromMillisecondsSinceEpoch(
                       (point.x as num).toInt(),
                     ).toLocal().toString()
-                    : '${widget.xAxisMode.label} ${formatMetricValue(point.x)}';
+                    : '${xAxisLabel(widget.xAxis)} ${formatMetricValue(point.x)}';
             final value = point.y;
             if (value == null) return;
             final label = value.toStringAsFixed(4);
@@ -268,11 +272,14 @@ class _WandbLineChartState extends State<WandbLineChart> {
   }
 }
 
-enum XAxisMode {
-  step('Step'),
-  relativeTime('Relative Time'),
-  wallClock('Wall Clock');
+/// X axes W&B derives from every history row, in the web's menu order.
+const builtInXAxes = ['_step', '_runtime', '_absolute_runtime', '_timestamp'];
 
-  const XAxisMode(this.label);
-  final String label;
-}
+/// Display name for a W&B X-axis key; history keys are shown verbatim.
+String xAxisLabel(String xAxis) => switch (xAxis) {
+  '_step' => 'Step',
+  '_runtime' => 'Relative Time (Process)',
+  '_absolute_runtime' => 'Relative Time (Wall)',
+  '_timestamp' => 'Wall Time',
+  _ => xAxis,
+};
