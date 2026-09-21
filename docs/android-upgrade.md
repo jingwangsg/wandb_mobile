@@ -160,3 +160,30 @@ Delivered artifact:
   variants. No Firebase service-account key or emulator session is packaged.
 - The file is present in the requested local OneDrive directory; remote cloud
   synchronization was not verified. The previous preview was not overwritten.
+
+## Preview 2.0.2: web workspace settings, September 22
+
+Commit `ff24853` on `main`. Project panels no longer sweep every run in the
+project: they list runs once with the Runs tab's filters and sort and draw the
+first visible runs (10 by default), with a visible-runs sheet for the limit and
+per-run eye toggles. The X axis can be any history key. Line plot settings and
+run selection default to the signed-in user's W&B web workspace, read through
+`project.allViews(viewType: "project-view", userName:)`; app-side rules
+override. Preferences saved by earlier previews migrate their hidden-run lists.
+
+Verification: `flutter analyze` (two pre-existing warnings in untouched files),
+`flutter test` with 130 passing tests, `node scripts/check-wandb-schema.mjs`
+25/25, and the read-only live check against `nv-gear/gr00t2_pretrain/rz2hg2jr`,
+which parsed the user's real workspace (8 panel overrides) and fetched
+`train/loss` against `_runtime` (500 points). Three independent review passes
+(correctness, simplicity, specification) approved the final tree.
+
+Delivered artifact:
+
+- `~/Downloads/WandbMobile-2.0.2-preview-20260922.apk`
+- Version 2.0.2, versionCode 4; universal release APK, 61,940,253 bytes.
+- Target API 36; ARM64, ARMv7, and x86-64. APK v2 signature verified, still
+  using the development signing identity.
+- SHA-256: `5b58410256b35f044628cac58869e313a8f3ed5808bcf1463a00706b0eb06571`.
+- Built without `config/android.json`, so push notification client options
+  are not configured in this preview.
