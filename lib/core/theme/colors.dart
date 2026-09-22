@@ -33,6 +33,10 @@ class WandbColors {
     Color(0xFFCDDC39), // Lime
   ];
 
+  /// Colour of the [index]th series in a chart and of its legend entry.
+  static Color seriesColor(int index) =>
+      chartPalette[index % chartPalette.length];
+
   static Color forRunState(String? state) {
     switch (state?.toLowerCase()) {
       case 'running':

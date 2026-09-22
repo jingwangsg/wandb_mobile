@@ -188,7 +188,9 @@ class _WandbLineChartState extends State<WandbLineChart> {
           legend: Legend(
             isVisible: widget.showLegend && processed.length > 1,
             position: LegendPosition.bottom,
-            overflowMode: LegendItemOverflowMode.scroll,
+            // Every run stays readable; a scrolling row hid all but the first
+            // few names.
+            overflowMode: LegendItemOverflowMode.wrap,
             textStyle: TextStyle(
               fontFamily: 'SourceSans3',
               fontSize: 12,
@@ -234,6 +236,9 @@ class _WandbLineChartState extends State<WandbLineChart> {
                   : NumericAxis(
                     minimum: widget.yAxisMin,
                     maximum: widget.yAxisMax,
+                    // Fit the data like the web; the default padding for a
+                    // vertical axis pulls the range down to zero.
+                    rangePadding: ChartRangePadding.round,
                     anchorRangeToVisiblePoints: true,
                     majorGridLines: MajorGridLines(
                       color: colors.outlineVariant,
@@ -263,9 +268,7 @@ class _WandbLineChartState extends State<WandbLineChart> {
                           widget.logScale && (point.high ?? 0) <= 0
                               ? null
                               : point.high,
-                  color: WandbColors
-                      .chartPalette[index % WandbColors.chartPalette.length]
-                      .withValues(alpha: 0.18),
+                  color: WandbColors.seriesColor(index).withValues(alpha: 0.18),
                   borderWidth: 0,
                   animationDuration: 0,
                   enableTrackball: false,
@@ -283,9 +286,7 @@ class _WandbLineChartState extends State<WandbLineChart> {
                 emptyPointSettings: const EmptyPointSettings(
                   mode: EmptyPointMode.gap,
                 ),
-                color:
-                    WandbColors.chartPalette[index %
-                        WandbColors.chartPalette.length],
+                color: WandbColors.seriesColor(index),
                 width: 1.6,
                 animationDuration: 0,
                 markerSettings: MarkerSettings(

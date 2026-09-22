@@ -222,6 +222,37 @@ class _PanelsViewState extends ConsumerState<PanelsView> {
             ],
           ),
         ),
+        // One legend for the page: every panel draws the visible runs in this
+        // order, so the colours match across cards.
+        if (visibleRuns != null && visibleRuns.visible.length > 1)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+            child: Wrap(
+              spacing: 12,
+              runSpacing: 2,
+              children: [
+                for (final (index, run) in visibleRuns.visible.indexed)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: WandbColors.seriesColor(index),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        run.displayName,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+          ),
         Expanded(
           child: keys.when(
             loading: () => const Center(child: CircularProgressIndicator()),

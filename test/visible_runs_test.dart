@@ -260,6 +260,9 @@ void main() {
     expect(repository.histories.length, 10);
     expect(repository.listings, [null]);
     expect(find.text('10 of 100 runs'), findsOneWidget);
+    // The page legend names every drawn run and nothing else.
+    expect(find.text('Run 9'), findsOneWidget);
+    expect(find.text('Run 10'), findsNothing);
 
     await tester.tap(find.text('10 of 100 runs'));
     await tester.pumpAndSettle();
@@ -270,6 +273,7 @@ void main() {
     await tester.tap(find.byTooltip('Close'));
     await tester.pumpAndSettle();
     expect(find.text('20 of 100 runs'), findsOneWidget);
+    expect(find.text('Run 19'), findsOneWidget);
     expect(chart(tester).series.length, 20);
     expect(repository.histories.length, 30);
     expect(repository.listings.length, 2);
