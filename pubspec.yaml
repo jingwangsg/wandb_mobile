@@ -1,7 +1,7 @@
 name: wandb_mobile
 description: A mobile client for Weights & Biases with native chart interactions.
 publish_to: 'none'
-version: 2.0.4+6
+version: 2.1.0+7
 
 environment:
   sdk: ^3.7.0

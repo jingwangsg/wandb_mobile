@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/widgets/wandb_icon.dart';
 import '../../models/metric_chart_rule.dart';
+import '../../models/run_grouping.dart';
+import 'key_picker.dart';
 import 'wandb_line_chart.dart';
 
 class LinePlotSettings extends StatefulWidget {
@@ -13,6 +15,7 @@ class LinePlotSettings extends StatefulWidget {
     required this.onReset,
     required this.xAxisOptions,
     this.resetRule = MetricChartRule.defaults,
+    this.grouped = false,
   });
   final MetricChartRule rule;
   final String scope;
@@ -22,6 +25,9 @@ class LinePlotSettings extends StatefulWidget {
 
   /// History keys offered as custom X axes after the built-in ones.
   final List<String> xAxisOptions;
+
+  /// Whether project runs are grouped, which makes the group controls apply.
+  final bool grouped;
 
   @override
   State<LinePlotSettings> createState() => _LinePlotSettingsState();
@@ -131,9 +137,15 @@ class _LinePlotSettingsState extends State<LinePlotSettings> {
                     isScrollControlled: true,
                     useSafeArea: true,
                     builder:
-                        (_) => XAxisPicker(
+                        (_) => KeyPicker(
+                          title: 'X axis',
+                          options: [
+                            ...builtInXAxes,
+                            for (final key in widget.xAxisOptions)
+                              if (!builtInXAxes.contains(key)) key,
+                          ],
                           selected: _rule.xAxis,
-                          options: widget.xAxisOptions,
+                          labelOf: xAxisLabel,
                           onSelected:
                               (value) => _update(_rule.copyWith(xAxis: value)),
                         ),
@@ -225,6 +237,50 @@ class _LinePlotSettingsState extends State<LinePlotSettings> {
                 },
               ),
             ),
+            if (widget.grouped) ...[
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Group aggregation'),
+                trailing: DropdownButton<String>(
+                  value: _rule.groupAgg,
+                  items: [
+                    for (final aggregation in groupAggregations)
+                      DropdownMenuItem(
+                        value: aggregation,
+                        child: Text(aggregation),
+                      ),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) {
+                      _update(_rule.copyWith(groupAgg: value));
+                    }
+                  },
+                ),
+              ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Group band'),
+                trailing: DropdownButton<String>(
+                  value: _rule.groupArea,
+                  items: [
+                    for (final area in groupAreas)
+                      DropdownMenuItem(
+                        value: area,
+                        child: Text(switch (area) {
+                          'minmax' => 'Min to max',
+                          'stddev' => 'Std deviation',
+                          _ => 'None',
+                        }),
+                      ),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) {
+                      _update(_rule.copyWith(groupArea: value));
+                    }
+                  },
+                ),
+              ),
+            ],
             const Divider(),
             const SizedBox(height: 8),
             Row(
@@ -304,102 +360,6 @@ class _LinePlotSettingsState extends State<LinePlotSettings> {
                 widget.scope == 'Applies to this line plot'
                     ? 'Reset this line plot'
                     : 'Reset to defaults',
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Bottom sheet listing the built-in X axes followed by searchable history
-/// keys, as in the web's panel X-axis menu.
-class XAxisPicker extends StatefulWidget {
-  const XAxisPicker({
-    super.key,
-    required this.selected,
-    required this.options,
-    required this.onSelected,
-  });
-  final String selected;
-  final List<String> options;
-  final ValueChanged<String> onSelected;
-
-  @override
-  State<XAxisPicker> createState() => _XAxisPickerState();
-}
-
-class _XAxisPickerState extends State<XAxisPicker> {
-  String _query = '';
-
-  @override
-  Widget build(BuildContext context) {
-    final query = _query.toLowerCase();
-    final matches = [
-      for (final axis in builtInXAxes)
-        if (xAxisLabel(axis).toLowerCase().contains(query)) axis,
-      for (final key in widget.options)
-        if (!builtInXAxes.contains(key) && key.toLowerCase().contains(query))
-          key,
-    ];
-    return SafeArea(
-      child: SizedBox(
-        height: MediaQuery.sizeOf(context).height * 0.7,
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 8, 0),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      'X axis',
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'Close',
-                    onPressed: () => Navigator.pop(context),
-                    icon: const WandbIcon('close'),
-                  ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-              child: TextField(
-                decoration: const InputDecoration(
-                  hintText: 'Search X axis',
-                  prefixIcon: Padding(
-                    padding: EdgeInsets.all(12),
-                    child: WandbIcon('search'),
-                  ),
-                ),
-                onChanged: (value) => setState(() => _query = value),
-              ),
-            ),
-            Expanded(
-              child: ListView.builder(
-                itemCount: matches.length,
-                itemBuilder: (context, index) {
-                  final axis = matches[index];
-                  return ListTile(
-                    title: Text(
-                      xAxisLabel(axis),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    trailing:
-                        axis == widget.selected
-                            ? const WandbIcon('checkmark', size: 18)
-                            : null,
-                    onTap: () {
-                      widget.onSelected(axis);
-                      Navigator.pop(context);
-                    },
-                  );
-                },
               ),
             ),
           ],

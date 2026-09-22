@@ -25,10 +25,21 @@ class MetricPoint {
 
 /// A series of metric points for one metric key.
 class MetricSeries {
-  const MetricSeries({required this.key, required this.points});
+  const MetricSeries({
+    required this.key,
+    required this.points,
+    this.color,
+    this.dashArray,
+  });
 
   final String key;
   final List<MetricPoint> points;
+
+  /// ARGB colour of the line's run or group; the palette applies when null.
+  final int? color;
+
+  /// Dash pattern telling a run's lines apart when a panel draws several.
+  final List<double>? dashArray;
 
   bool get isEmpty => points.isEmpty;
   int get length => points.length;

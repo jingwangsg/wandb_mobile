@@ -8,12 +8,16 @@ import '../../../core/models/metric_point.dart';
 import '../../../core/models/resource_refs.dart';
 import '../../../core/models/run.dart';
 import '../../../core/providers/mobile_preferences.dart';
+import '../../../core/theme/colors.dart';
 import '../../auth/providers/auth_providers.dart';
 import '../../runs/providers/runs_providers.dart';
 import '../../runs/utils/metric_selection.dart';
+import '../models/metric_expression.dart';
+import '../models/panel_spec.dart';
+import '../models/run_grouping.dart';
 import '../models/workspace_settings.dart';
 
-typedef PanelRequest = ({ProjectRef project, String? runName, String metric});
+typedef PanelRequest = ({ProjectRef project, String? runName, PanelSpec panel});
 
 /// Runs considered for project panels. [candidates] were listed with the Runs
 /// tab's filters and order; [visible] is the drawn subset, at most [limit].
@@ -74,6 +78,14 @@ bool isRunVisible(
   WorkspaceSettings? workspace,
   String runName,
 ) => overrides?[runName] ?? workspace?.isRunVisible(runName) ?? true;
+
+/// Grouping keys in force for a project: the app's own list when set (an
+/// empty list turns grouping off), else the web workspace's.
+List<String> groupingKeys(
+  Map<String, List<String>> preference,
+  WorkspaceSettings? workspace,
+  String projectPath,
+) => preference[projectPath] ?? workspace?.grouping ?? const [];
 
 final visibleRunsProvider = FutureProvider.autoDispose.family<
   VisibleRuns,
@@ -181,13 +193,21 @@ void refreshPanelSeries(WidgetRef ref, PanelRequest request) {
       ref.read(visibleRunsProvider(request.project)).hasError) {
     ref.invalidate(visibleRunsProvider(request.project));
   }
-  ref.invalidate(panelSeriesProvider(request));
+  ref.invalidate(_panelHistoryProvider(request));
 }
 
-final panelSeriesProvider = FutureProvider.autoDispose.family<
-  List<MetricSeries>,
+typedef _RunLines = (WandbRun? run, List<MetricSeries> lines);
+
+/// A panel's fetched lines: [labels] names them (drawn metrics, then
+/// expressions) and [runs] holds one entry per visible run, or a single entry
+/// with a null run in run scope. Fetching depends on the X axis and the point
+/// aggregation only; grouping and colours are applied by [panelSeriesProvider]
+/// without refetching.
+final _panelHistoryProvider = FutureProvider.autoDispose.family<
+  ({List<String> labels, List<_RunLines> runs}),
   PanelRequest
 >((ref, request) async {
+  final panel = request.panel;
   ref.watch(
     panelRefreshProvider((project: request.project, runName: request.runName)),
   );
@@ -196,19 +216,31 @@ final panelSeriesProvider = FutureProvider.autoDispose.family<
   // so a superseded build does not fetch histories the new one refetches.
   var disposed = false;
   ref.onDispose(() => disposed = true);
+  const none = (labels: <String>[], runs: <_RunLines>[]);
   final workspace = await ref.watch(
     workspaceSettingsProvider(request.project).future,
   );
-  if (disposed) return const [];
+  if (disposed) return none;
+  // A metric regex is matched against the project's metric catalog.
+  final catalog =
+      panel.metricRegex == null
+          ? const <String>[]
+          : await ref.watch(projectMetricKeysProvider(request.project).future);
+  if (disposed) return none;
+  final drawn = panel.resolveMetrics(catalog);
+  final expressions = panel.validExpressions;
+  final keys = {...drawn, for (final e in expressions) ...e.keys}.toList();
+  final labels = [...drawn, for (final e in expressions) e.source];
+  if (keys.isEmpty) return none;
   final scope =
       request.runName == null
           ? request.project.path
           : '${request.project.path}/${request.runName}';
   // The server shapes the data along the chosen axis and aggregation, so only
-  // those two settings (not smoothing or range edits) refetch.
+  // those (not smoothing, range or grouping edits) refetch.
   final (xAxis, aggregation) = ref.watch(
     mobilePreferencesProvider.select((value) {
-      final rule = value.ruleFor(scope, request.metric, workspace);
+      final rule = value.ruleFor(scope, panel, workspace);
       return (rule.xAxis, rule.pointAggregation);
     }),
   );
@@ -218,36 +250,129 @@ final panelSeriesProvider = FutureProvider.autoDispose.family<
             entity: request.project.entity,
             project: request.project.project,
             runName: runName,
-            keys: [request.metric],
+            keys: keys,
             xAxis: xAxis,
           )
           : repository.getBucketedHistory(
             entity: request.project.entity,
             project: request.project.project,
             runName: runName,
-            keys: [request.metric],
+            keys: keys,
             xAxis: xAxis,
           );
-  if (request.runName != null) return fetch(request.runName!);
+  // One run's lines: the drawn metrics, then the expressions, each keyed by
+  // its label.
+  List<MetricSeries> linesOf(List<MetricSeries> fetched) {
+    final byKey = {for (final series in fetched) series.key: series};
+    return [
+      for (final metric in drawn)
+        if (byKey[metric] case final series? when !series.isEmpty) series,
+      for (final expression in expressions)
+        if (expressionSeries(expression, fetched) case final series
+            when !series.isEmpty)
+          series,
+    ];
+  }
+
+  if (request.runName != null) {
+    final lines = linesOf(await fetch(request.runName!));
+    return (labels: labels, runs: [(null, lines)]);
+  }
   final runs = await ref.watch(visibleRunsProvider(request.project).future);
-  if (disposed) return const [];
-  final lines = <MetricSeries>[];
+  if (disposed) return none;
+  final perRun = <_RunLines>[];
   for (var start = 0; start < runs.visible.length; start += 6) {
     final end = (start + 6).clamp(0, runs.visible.length);
     final batch = await Future.wait(
       runs.visible.sublist(start, end).map((run) async {
-        final history = await fetch(run.name);
-        return MetricSeries(
-          key: '${run.displayName} (${run.name})',
-          points: history.firstOrNull?.points ?? [],
-        );
+        return (run, linesOf(await fetch(run.name)));
       }),
     );
-    if (disposed) return lines;
-    lines.addAll(batch.where((line) => !line.isEmpty));
+    if (disposed) return none;
+    perRun.addAll(batch);
   }
-  return lines;
+  return (labels: labels, runs: perRun);
 });
+
+/// Dash patterns telling a run's lines apart when a panel draws several.
+const _dashes = <List<double>?>[
+  null,
+  [6, 3],
+  [2, 3],
+  [8, 3, 2, 3],
+];
+
+/// A panel's lines ready to draw. In project scope each run's lines take the
+/// run's colour (the web's, else the palette by run index, which the page
+/// legend uses too) and a dash per label; with grouping on, runs are replaced
+/// by one aggregate line per group and label, coloured by group index.
+final panelSeriesProvider = FutureProvider.autoDispose
+    .family<List<MetricSeries>, PanelRequest>((ref, request) async {
+      // Watched before the await: a build disposed while waiting must not
+      // subscribe afterwards.
+      final path = request.project.path;
+      final workspace =
+          ref.watch(workspaceSettingsProvider(request.project)).valueOrNull;
+      final (grouping, groupAgg, groupArea) = ref.watch(
+        mobilePreferencesProvider.select((value) {
+          final rule = value.ruleFor(path, request.panel, workspace);
+          return (
+            groupingKeys(value.grouping, workspace, path),
+            rule.groupAgg,
+            rule.groupArea,
+          );
+        }),
+      );
+      final history = await ref.watch(_panelHistoryProvider(request).future);
+      if (request.runName != null) {
+        return history.runs.firstOrNull?.$2 ?? const [];
+      }
+      final labels = history.labels;
+      String name(String run, String label) =>
+          labels.length == 1 ? run : '$run · $label';
+      List<double>? dash(String label) =>
+          _dashes[labels.indexOf(label) % _dashes.length];
+      if (grouping.isEmpty) {
+        return [
+          for (final (index, (run, lines)) in history.runs.indexed)
+            for (final line in lines)
+              MetricSeries(
+                key: name('${run!.displayName} (${run.name})', line.key),
+                points: line.points,
+                color:
+                    workspace?.runColors[run.name] ??
+                    WandbColors.seriesColor(index).toARGB32(),
+                dashArray: dash(line.key),
+              ),
+        ];
+      }
+      final groups = <String, List<List<MetricSeries>>>{};
+      for (final (run, lines) in history.runs) {
+        (groups[groupLabel(run!, grouping)] ??= []).add(lines);
+      }
+      return [
+        for (final (index, MapEntry(key: group, value: members))
+            in groups.entries.indexed)
+          for (final label in labels)
+            if (aggregateLines(
+                  name(group, label),
+                  [
+                    for (final lines in members)
+                      for (final line in lines)
+                        if (line.key == label) line.points,
+                  ],
+                  groupAgg,
+                  groupArea,
+                )
+                case final series when !series.isEmpty)
+              MetricSeries(
+                key: series.key,
+                points: series.points,
+                color: WandbColors.seriesColor(index).toARGB32(),
+                dashArray: dash(label),
+              ),
+      ];
+    });
 
 final runSystemSeriesProvider = FutureProvider.autoDispose
     .family<List<MetricSeries>, RunRef>((ref, run) async {

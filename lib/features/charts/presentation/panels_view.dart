@@ -12,10 +12,15 @@ import '../../../core/widgets/mobile_controls.dart';
 import '../../../core/widgets/wandb_icon.dart';
 import '../../notifications/presentation/metric_alert_sheet.dart';
 import '../../runs/utils/metric_selection.dart';
-import '../providers/panel_providers.dart';
 import '../models/metric_chart_rule.dart';
-import 'widgets/line_plot_settings.dart';
+import '../models/panel_spec.dart';
+import '../models/run_grouping.dart';
+import '../providers/panel_providers.dart';
+import 'widgets/grouping_sheet.dart';
 import 'widgets/image_metric_panel.dart';
+import 'widgets/key_picker.dart';
+import 'widgets/line_plot_settings.dart';
+import 'widgets/panel_editor_sheet.dart';
 import 'widgets/visible_runs_sheet.dart';
 import 'widgets/wandb_line_chart.dart';
 
@@ -64,7 +69,7 @@ class _PanelsViewState extends ConsumerState<PanelsView> {
           final provider = panelSeriesProvider((
             project: widget.project,
             runName: widget.run?.name,
-            metric: metric,
+            panel: PanelSpec.metric(metric),
           ));
           if (ref.exists(provider) && ref.read(provider).isLoading) return;
         }
@@ -98,6 +103,29 @@ class _PanelsViewState extends ConsumerState<PanelsView> {
     super.dispose();
   }
 
+  /// Opens the app panel editor: a new panel, or [initial] to edit or delete.
+  void _editPanel(String scope, List<String> catalog, [PanelSpec? initial]) =>
+      showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        builder:
+            (_) => PanelEditorSheet(
+              initial: initial,
+              catalog: catalog,
+              onSave:
+                  (panel) => ref
+                      .read(mobilePreferencesProvider.notifier)
+                      .setCustomPanel(scope, panel),
+              onDelete:
+                  initial == null
+                      ? null
+                      : () => ref
+                          .read(mobilePreferencesProvider.notifier)
+                          .removeCustomPanel(scope, initial.id),
+            ),
+      );
+
   @override
   Widget build(BuildContext context) {
     final preferences = ref.watch(mobilePreferencesProvider);
@@ -107,6 +135,10 @@ class _PanelsViewState extends ConsumerState<PanelsView> {
             : null;
     final workspace =
         ref.watch(workspaceSettingsProvider(widget.project)).valueOrNull;
+    final grouping =
+        widget.run == null
+            ? groupingKeys(preferences.grouping, workspace, widget.project.path)
+            : const <String>[];
     final imageMetrics = <String>{};
     for (final entry
         in (widget.run?.historyKeys?['keys'] as Map? ?? {}).entries) {
@@ -189,41 +221,77 @@ class _PanelsViewState extends ConsumerState<PanelsView> {
                             '${visibleRuns.totalCount ?? visibleRuns.candidates.length} runs',
                   ),
                 ),
-              IconButton(
-                tooltip: 'Line plot settings',
+              PopupMenuButton<String>(
+                tooltip: 'Panel options',
                 icon: const WandbIcon('settings_parameters'),
-                onPressed:
-                    () => showModalBottomSheet<void>(
-                      context: context,
-                      isScrollControlled: true,
-                      useSafeArea: true,
-                      builder:
-                          (_) => LinePlotSettings(
-                            rule: preferences.scopeRuleFor(scope, workspace),
-                            resetRule:
-                                workspace?.workspaceDefaults ??
-                                MetricChartRule.defaults,
-                            scope:
-                                widget.run == null
-                                    ? 'Applies to all line plots in this project'
-                                    : 'Applies to all line plots in this run',
-                            xAxisOptions: keys.valueOrNull ?? const [],
-                            onChanged:
-                                (rule) => ref
-                                    .read(mobilePreferencesProvider.notifier)
-                                    .setDefaults(scope, rule),
-                            onReset:
-                                () => ref
-                                    .read(mobilePreferencesProvider.notifier)
-                                    .resetDefaults(scope),
+                itemBuilder:
+                    (_) => [
+                      const PopupMenuItem(
+                        value: 'settings',
+                        child: Text('Line plot settings'),
+                      ),
+                      const PopupMenuItem(
+                        value: 'add',
+                        child: Text('Add panel'),
+                      ),
+                      if (widget.run == null)
+                        PopupMenuItem(
+                          value: 'group',
+                          child: Text(
+                            grouping.isEmpty
+                                ? 'Group runs'
+                                : 'Group runs (${grouping.length})',
                           ),
-                    ),
+                        ),
+                    ],
+                onSelected: (value) {
+                  if (value == 'add') {
+                    _editPanel(scope, keys.valueOrNull ?? const []);
+                    return;
+                  }
+                  showModalBottomSheet<void>(
+                    context: context,
+                    isScrollControlled: true,
+                    useSafeArea: true,
+                    builder:
+                        (_) =>
+                            value == 'group'
+                                ? GroupingSheet(project: widget.project)
+                                : LinePlotSettings(
+                                  rule: preferences.scopeRuleFor(
+                                    scope,
+                                    workspace,
+                                  ),
+                                  resetRule:
+                                      workspace?.workspaceDefaults ??
+                                      MetricChartRule.defaults,
+                                  scope:
+                                      widget.run == null
+                                          ? 'Applies to all line plots in this project'
+                                          : 'Applies to all line plots in this run',
+                                  xAxisOptions: keys.valueOrNull ?? const [],
+                                  grouped: grouping.isNotEmpty,
+                                  onChanged:
+                                      (rule) => ref
+                                          .read(
+                                            mobilePreferencesProvider.notifier,
+                                          )
+                                          .setDefaults(scope, rule),
+                                  onReset:
+                                      () => ref
+                                          .read(
+                                            mobilePreferencesProvider.notifier,
+                                          )
+                                          .resetDefaults(scope),
+                                ),
+                  );
+                },
               ),
             ],
           ),
         ),
-        // One legend for the page: every panel draws the visible runs in this
-        // order, so the colours match across cards.
+        // One legend for the page: every panel colours runs (or groups, when
+        // grouping is on) by this order, so the colours match across cards.
         if (visibleRuns != null && visibleRuns.visible.length > 1)
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
@@ -231,7 +299,18 @@ class _PanelsViewState extends ConsumerState<PanelsView> {
               spacing: 12,
               runSpacing: 2,
               children: [
-                for (final (index, run) in visibleRuns.visible.indexed)
+                for (final (index, (label, color))
+                    in <(String, int?)>[
+                      if (grouping.isEmpty)
+                        for (final run in visibleRuns.visible)
+                          (run.displayName, workspace?.runColors[run.name])
+                      else
+                        for (final label in {
+                          for (final run in visibleRuns.visible)
+                            groupLabel(run, grouping),
+                        })
+                          (label, null),
+                    ].indexed)
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -239,15 +318,15 @@ class _PanelsViewState extends ConsumerState<PanelsView> {
                         width: 8,
                         height: 8,
                         decoration: BoxDecoration(
-                          color: WandbColors.seriesColor(index),
+                          color:
+                              color != null
+                                  ? Color(color)
+                                  : WandbColors.seriesColor(index),
                           shape: BoxShape.circle,
                         ),
                       ),
                       const SizedBox(width: 4),
-                      Text(
-                        run.displayName,
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
+                      Text(label, style: Theme.of(context).textTheme.bodySmall),
                     ],
                   ),
               ],
@@ -277,17 +356,33 @@ class _PanelsViewState extends ConsumerState<PanelsView> {
                 ).compareTo(metricPriorityScore(a, historyKeys));
                 return priority != 0 ? priority : a.compareTo(b);
               });
-              final groups = <String, List<String>>{};
-              for (final name in rankedNames) {
+              // App panels first, then the web's explicit panels by their
+              // section, then one auto panel per metric (minus those hidden
+              // on the web).
+              final appPanels = preferences.customPanels[scope] ?? const [];
+              // Metrics the web already saved a panel for keep that panel.
+              final webPanelIds = {
+                for (final panel in workspace?.panels ?? const <PanelSpec>[])
+                  panel.id,
+              };
+              final groups = <String, List<PanelSpec>>{};
+              for (final panel in [
+                ...appPanels,
+                ...?workspace?.panels,
+                for (final name in rankedNames)
+                  if (workspace?.hiddenMetrics.contains(name) != true &&
+                      !webPanelIds.contains(name))
+                    PanelSpec.metric(name),
+              ]) {
                 if (_starredOnly &&
-                    !isMetricStarred(preferences, widget.project, name)) {
+                    !isMetricStarred(preferences, widget.project, panel.id)) {
                   continue;
                 }
-                if (_pattern != null && !_pattern!.hasMatch(name)) continue;
-                final slash = name.indexOf('/');
-                final section =
-                    slash > 0 ? name.substring(0, slash) : 'Metrics';
-                (groups[section] ??= []).add(name);
+                if (_pattern != null &&
+                    !_pattern!.hasMatch(panel.displayTitle)) {
+                  continue;
+                }
+                (groups[panel.section] ??= []).add(panel);
               }
               final systemLines =
                   system.valueOrNull
@@ -368,37 +463,47 @@ class _PanelsViewState extends ConsumerState<PanelsView> {
                           padding: const EdgeInsets.symmetric(horizontal: 16),
                           sliver: SliverList.builder(
                             itemCount: groups[section]!.length,
-                            itemBuilder:
-                                (context, index) => Padding(
-                                  padding: const EdgeInsets.only(bottom: 12),
-                                  child:
-                                      widget.run != null &&
-                                              imageMetrics.contains(
-                                                groups[section]![index],
-                                              )
-                                          ? ImageMetricPanel(
-                                            run: RunRef(
-                                              entity: widget.project.entity,
-                                              project: widget.project.project,
-                                              runName: widget.run!.name,
-                                            ),
-                                            metric: groups[section]![index],
-                                            lastStep:
-                                                (widget.run!.historyKeys?['lastStep']
-                                                            as num? ??
-                                                        widget
-                                                                .run!
-                                                                .summaryMetrics['_step']
-                                                            as num? ??
-                                                        -1)
-                                                    .toInt(),
-                                          )
-                                          : MetricPanelCard(
-                                            project: widget.project,
-                                            runName: widget.run?.name,
-                                            metric: groups[section]![index],
+                            itemBuilder: (context, index) {
+                              final panel = groups[section]![index];
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child:
+                                    widget.run != null &&
+                                            panel.isAuto &&
+                                            imageMetrics.contains(panel.id)
+                                        ? ImageMetricPanel(
+                                          run: RunRef(
+                                            entity: widget.project.entity,
+                                            project: widget.project.project,
+                                            runName: widget.run!.name,
                                           ),
-                                ),
+                                          metric: panel.id,
+                                          lastStep:
+                                              (widget.run!.historyKeys?['lastStep']
+                                                          as num? ??
+                                                      widget
+                                                              .run!
+                                                              .summaryMetrics['_step']
+                                                          as num? ??
+                                                      -1)
+                                                  .toInt(),
+                                        )
+                                        : MetricPanelCard(
+                                          project: widget.project,
+                                          runName: widget.run?.name,
+                                          panel: panel,
+                                          onEdit:
+                                              appPanels.contains(panel)
+                                                  ? () => _editPanel(
+                                                    scope,
+                                                    keys.valueOrNull ??
+                                                        const [],
+                                                    panel,
+                                                  )
+                                                  : null,
+                                        ),
+                              );
+                            },
                           ),
                         ),
                     ],
@@ -462,7 +567,9 @@ class _PanelsViewState extends ConsumerState<PanelsView> {
                                   child: MetricPanelCard(
                                     project: widget.project,
                                     runName: widget.run!.name,
-                                    metric: systemLines[index].key,
+                                    panel: PanelSpec.metric(
+                                      systemLines[index].key,
+                                    ),
                                     systemSeries: systemLines[index],
                                   ),
                                 ),
@@ -519,23 +626,27 @@ class MetricPanelCard extends ConsumerWidget {
   const MetricPanelCard({
     super.key,
     required this.project,
-    required this.metric,
+    required this.panel,
     this.runName,
     this.systemSeries,
+    this.onEdit,
   });
   final ProjectRef project;
-  final String metric;
+  final PanelSpec panel;
   final String? runName;
   final MetricSeries? systemSeries;
+
+  /// Set for panels created in the app; opens the editor.
+  final VoidCallback? onEdit;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final preferences = ref.watch(mobilePreferencesProvider);
-    final starred = isMetricStarred(preferences, project, metric);
+    final starred = isMetricStarred(preferences, project, panel.id);
     final scope = runName == null ? project.path : '${project.path}/$runName';
     final workspace = ref.watch(workspaceSettingsProvider(project)).valueOrNull;
-    final rule = preferences.ruleFor(scope, metric, workspace);
-    final request = (project: project, runName: runName, metric: metric);
+    final rule = preferences.ruleFor(scope, panel, workspace);
+    final request = (project: project, runName: runName, panel: panel);
     final series =
         systemSeries == null
             ? ref.watch(panelSeriesProvider(request))
@@ -563,7 +674,7 @@ class MetricPanelCard extends ConsumerWidget {
                         horizontal: 4,
                       ),
                       child: Text(
-                        metric,
+                        panel.displayTitle,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.titleMedium,
@@ -571,12 +682,18 @@ class MetricPanelCard extends ConsumerWidget {
                     ),
                   ),
                 ),
+                if (onEdit != null)
+                  IconButton(
+                    tooltip: 'Edit panel',
+                    onPressed: onEdit,
+                    icon: const WandbIcon('pencil_(edit)', size: 18),
+                  ),
                 IconButton(
                   tooltip: starred ? 'Unstar panel' : 'Star panel',
                   onPressed:
                       () => ref
                           .read(mobilePreferencesProvider.notifier)
-                          .toggleMetric(project.path, metric),
+                          .toggleMetric(project.path, panel.id),
                   icon: WandbIcon(
                     starred ? 'star_(filled)' : 'star',
                     size: 20,
@@ -690,7 +807,7 @@ class _PanelDetailScreenState extends ConsumerState<PanelDetailScreen> {
     final starred = isMetricStarred(
       preferences,
       request.project,
-      request.metric,
+      request.panel.id,
     );
     final scope =
         request.runName == null
@@ -698,7 +815,14 @@ class _PanelDetailScreenState extends ConsumerState<PanelDetailScreen> {
             : '${request.project.path}/${request.runName}';
     final workspace =
         ref.watch(workspaceSettingsProvider(request.project)).valueOrNull;
-    final rule = preferences.ruleFor(scope, request.metric, workspace);
+    final rule = preferences.ruleFor(scope, request.panel, workspace);
+    final grouped =
+        request.runName == null &&
+        groupingKeys(
+          preferences.grouping,
+          workspace,
+          request.project.path,
+        ).isNotEmpty;
     final metricKeys =
         ref.watch(projectMetricKeysProvider(request.project)).valueOrNull ??
         const <String>[];
@@ -718,13 +842,13 @@ class _PanelDetailScreenState extends ConsumerState<PanelDetailScreen> {
                 .whenData(
                   (lines) =>
                       lines
-                          .where((line) => line.key == request.metric)
+                          .where((line) => line.key == request.panel.id)
                           .toList(),
                 );
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          request.metric,
+          request.panel.displayTitle,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
@@ -734,13 +858,13 @@ class _PanelDetailScreenState extends ConsumerState<PanelDetailScreen> {
             onPressed:
                 () => ref
                     .read(mobilePreferencesProvider.notifier)
-                    .toggleMetric(request.project.path, request.metric),
+                    .toggleMetric(request.project.path, request.panel.id),
             icon: WandbIcon(
               starred ? 'star_(filled)' : 'star',
               color: starred ? WandbColors.star : null,
             ),
           ),
-          if (widget.systemSeries == null)
+          if (widget.systemSeries == null && request.panel.isAuto)
             IconButton(
               tooltip: 'Automation alerts',
               onPressed:
@@ -751,7 +875,7 @@ class _PanelDetailScreenState extends ConsumerState<PanelDetailScreen> {
                     builder:
                         (_) => MetricAlertSheet(
                           project: request.project,
-                          metric: request.metric,
+                          metric: request.panel.id,
                         ),
                   ),
               icon: const WandbIcon('bell_notifications'),
@@ -810,9 +934,15 @@ class _PanelDetailScreenState extends ConsumerState<PanelDetailScreen> {
                             isScrollControlled: true,
                             useSafeArea: true,
                             builder:
-                                (_) => XAxisPicker(
+                                (_) => KeyPicker(
+                                  title: 'X axis',
+                                  options: [
+                                    ...builtInXAxes,
+                                    for (final key in metricKeys)
+                                      if (!builtInXAxes.contains(key)) key,
+                                  ],
                                   selected: rule.xAxis,
-                                  options: metricKeys,
+                                  labelOf: xAxisLabel,
                                   onSelected: (value) {
                                     // Read at tap time: the workspace may
                                     // have arrived since this screen built.
@@ -820,7 +950,7 @@ class _PanelDetailScreenState extends ConsumerState<PanelDetailScreen> {
                                         .read(mobilePreferencesProvider)
                                         .ruleFor(
                                           scope,
-                                          request.metric,
+                                          request.panel,
                                           ref
                                               .read(
                                                 workspaceSettingsProvider(
@@ -834,7 +964,7 @@ class _PanelDetailScreenState extends ConsumerState<PanelDetailScreen> {
                                           mobilePreferencesProvider.notifier,
                                         )
                                         .setRule(
-                                          request.metric,
+                                          request.panel.id,
                                           current.copyWith(xAxis: value),
                                         );
                                   },
@@ -869,21 +999,22 @@ class _PanelDetailScreenState extends ConsumerState<PanelDetailScreen> {
                                 xAxisOptions: metricKeys,
                                 resetRule: preferences.inheritedRuleFor(
                                   scope,
-                                  request.metric,
+                                  request.panel,
                                   workspace,
                                 ),
+                                grouped: grouped,
                                 onChanged:
                                     (value) => ref
                                         .read(
                                           mobilePreferencesProvider.notifier,
                                         )
-                                        .setRule(request.metric, value),
+                                        .setRule(request.panel.id, value),
                                 onReset:
                                     () => ref
                                         .read(
                                           mobilePreferencesProvider.notifier,
                                         )
-                                        .resetRule(request.metric),
+                                        .resetRule(request.panel.id),
                               ),
                         ),
                   ),

@@ -223,3 +223,28 @@ Delivered artifact:
 - SHA-256: `61fd08c3856bb3c7d35a62a2909659110277335c7760cfa20feb3d547ffa78cb`.
 - Installed and exercised on the API 35 emulator: run detail charts, Logs
   with five older pages, and the `gr00t2_pretrain` Panels tab.
+
+## Preview 2.0.4: Y auto-fit, legends, web line plot options, September 22
+
+Two reports against 2.0.3 and the first half of the web panel-settings
+parity work:
+
+- An automatic Y range pulled the axis down to zero (Syncfusion's default
+  padding for a vertical axis); it now rounds to the data like the web. A
+  user-set max still applies with an automatic min.
+- Legends were cut off, so curves could not be told apart. The detail chart's
+  legend wraps, and project panels show one legend row under the toolbar with
+  the colour every card uses for each run.
+- Smoothing type (time weighted EMA, EMA, Gaussian, running average, none)
+  with "Show original", "Exclude outliers when scaling", point aggregation
+  (bucketing or random sampling) and legend position are settings inherited
+  from the web's `smoothingType`, `smoothingWeight`, `ignoreOutliers`,
+  `excludeOutliers`, `pointVisualizationMethod` and `legendPosition`. The
+  server's `excludeOutliers` argument was measured to leave bucket extremes
+  unchanged, so outlier exclusion is client-side.
+
+Delivered artifact:
+
+- `~/Downloads/WandbMobile-2.0.4-preview-20260922.apk`
+- Version 2.0.4, versionCode 6; universal release APK, 62,644,765 bytes.
+- SHA-256: `6f2ca3aace1ecc95ae56fcaf635b39b8529a0901c59584cd8dd3436d4ef4ef49`.

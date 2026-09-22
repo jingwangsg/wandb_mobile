@@ -6,6 +6,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 
 import '../../features/auth/providers/auth_providers.dart';
 import '../../features/charts/models/metric_chart_rule.dart';
+import '../../features/charts/models/panel_spec.dart';
 import '../../features/charts/models/workspace_settings.dart';
 
 class MobilePreferences {
@@ -16,6 +17,8 @@ class MobilePreferences {
     this.visibleRunLimits = const {},
     this.chartRules = const {},
     this.defaultRules = const {},
+    this.customPanels = const {},
+    this.grouping = const {},
   });
 
   final ThemeMode theme;
@@ -27,8 +30,17 @@ class MobilePreferences {
 
   /// Project path -> how many visible runs the project panels draw.
   final Map<String, int> visibleRunLimits;
+
+  /// Panel key (metric name or panel id) -> rule saved in the app.
   final Map<String, MetricChartRule> chartRules;
   final Map<String, MetricChartRule> defaultRules;
+
+  /// Scope (project or run path) -> panels created in the app.
+  final Map<String, List<PanelSpec>> customPanels;
+
+  /// Project path -> run grouping keys (`config:lr`, `run:group`). An entry
+  /// overrides the web workspace's grouping; an empty list turns it off.
+  final Map<String, List<String>> grouping;
 
   /// The project- or run-wide rule: the app's own when set, else the web
   /// workspace's, else the app defaults. Both have the same reach, so the
@@ -38,22 +50,22 @@ class MobilePreferences {
       workspace?.workspaceDefaults ??
       MetricChartRule.defaults;
 
-  /// The rule [metric] inherits before any per-metric rule saved in the app:
+  /// The rule a panel inherits before any per-panel rule saved in the app:
   /// the web's per-panel and section settings for it over [scopeRuleFor].
   MetricChartRule inheritedRuleFor(
     String scope,
-    String metric,
+    PanelSpec panel,
     WorkspaceSettings? workspace,
   ) {
     final base = scopeRuleFor(scope, workspace);
-    return workspace?.apply(base, metric) ?? base;
+    return workspace?.apply(base, panel) ?? base;
   }
 
   MetricChartRule ruleFor(
     String scope,
-    String metric,
+    PanelSpec panel,
     WorkspaceSettings? workspace,
-  ) => chartRules[metric] ?? inheritedRuleFor(scope, metric, workspace);
+  ) => chartRules[panel.id] ?? inheritedRuleFor(scope, panel, workspace);
 
   MobilePreferences copyWith({
     ThemeMode? theme,
@@ -62,6 +74,8 @@ class MobilePreferences {
     Map<String, int>? visibleRunLimits,
     Map<String, MetricChartRule>? chartRules,
     Map<String, MetricChartRule>? defaultRules,
+    Map<String, List<PanelSpec>>? customPanels,
+    Map<String, List<String>>? grouping,
   }) => MobilePreferences(
     theme: theme ?? this.theme,
     starredMetrics: starredMetrics ?? this.starredMetrics,
@@ -69,6 +83,8 @@ class MobilePreferences {
     visibleRunLimits: visibleRunLimits ?? this.visibleRunLimits,
     chartRules: chartRules ?? this.chartRules,
     defaultRules: defaultRules ?? this.defaultRules,
+    customPanels: customPanels ?? this.customPanels,
+    grouping: grouping ?? this.grouping,
   );
 
   Map<String, dynamic> toJson() => {
@@ -80,6 +96,11 @@ class MobilePreferences {
     'defaultRules': defaultRules.map(
       (key, value) => MapEntry(key, value.toJson()),
     ),
+    'customPanels': customPanels.map(
+      (key, value) =>
+          MapEntry(key, [for (final panel in value) panel.toJson()]),
+    ),
+    'grouping': grouping,
   };
 
   factory MobilePreferences.fromJson(Map<String, dynamic> json) =>
@@ -112,6 +133,15 @@ class MobilePreferences {
             key,
             MetricChartRule.fromJson(Map<String, dynamic>.from(value as Map)),
           ),
+        ),
+        customPanels: (json['customPanels'] as Map<String, dynamic>? ?? {}).map(
+          (key, value) => MapEntry(key, [
+            for (final panel in value as List)
+              PanelSpec.fromJson(Map<String, dynamic>.from(panel as Map)),
+          ]),
+        ),
+        grouping: (json['grouping'] as Map<String, dynamic>? ?? {}).map(
+          (key, value) => MapEntry(key, List<String>.from(value as List)),
         ),
       );
 }
@@ -175,6 +205,47 @@ class MobilePreferencesNotifier extends StateNotifier<MobilePreferences> {
   Future<void> resetRule(String metric) {
     final rules = {...state.chartRules}..remove(metric);
     return _save(state.copyWith(chartRules: rules));
+  }
+
+  /// Adds an app panel to [scope], or replaces the one with its id in place.
+  Future<void> setCustomPanel(String scope, PanelSpec panel) {
+    final existing = state.customPanels[scope] ?? const <PanelSpec>[];
+    return _save(
+      state.copyWith(
+        customPanels: {
+          ...state.customPanels,
+          scope:
+              existing.any((other) => other.id == panel.id)
+                  ? [
+                    for (final other in existing)
+                      other.id == panel.id ? panel : other,
+                  ]
+                  : [...existing, panel],
+        },
+      ),
+    );
+  }
+
+  Future<void> removeCustomPanel(String scope, String id) => _save(
+    state.copyWith(
+      customPanels: {
+        ...state.customPanels,
+        scope: [
+          for (final existing
+              in state.customPanels[scope] ?? const <PanelSpec>[])
+            if (existing.id != id) existing,
+        ],
+      },
+    ),
+  );
+
+  Future<void> setGrouping(String project, List<String> keys) =>
+      _save(state.copyWith(grouping: {...state.grouping, project: keys}));
+
+  /// Drops the app's grouping choice so the web workspace's applies again.
+  Future<void> resetGrouping(String project) {
+    final grouping = {...state.grouping}..remove(project);
+    return _save(state.copyWith(grouping: grouping));
   }
 
   Future<void> _save(MobilePreferences next) async {

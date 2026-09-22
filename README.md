@@ -19,13 +19,24 @@ been verified; see [reference and acceptance notes](docs/android-upgrade.md).
   buckets every logged row along the chosen X axis and each bucket draws its
   average line inside a min-to-max band, so spikes stay visible. Hardware
   charts come from system events. Metric-name regex search, favorites,
-  full-screen charts, zoom, trackballs, TWEMA smoothing, logarithmic scale,
-  X axis by step, relative or wall time, or any history key, and per-metric
-  or scope-wide X/Y ranges.
-- Line plot settings and run selection default to the signed-in user's W&B web
-  workspace for the project (X axis, x/y ranges, smoothing, log scale, run
-  selection, max runs). Settings changed in the app override the web values
-  until the plot is reset.
+  full-screen charts, zoom, trackballs, logarithmic scale, X axis by step,
+  relative or wall time, or any history key, per-panel or scope-wide X/Y
+  ranges (empty means fit to the data), the web's smoothing types (time
+  weighted EMA, EMA, Gaussian, running average, none) with the original line
+  shown faintly, outlier exclusion from the Y range, bucketing or sampling
+  point aggregation, and legend position.
+- Panels beyond one metric per chart: the web workspace's own line plot
+  panels (several metrics, a metric regex, expressions such as
+  `${train/loss} - ${train/loss:min}`, a title) draw as on the web, panels the
+  web hides stay hidden, and the app can add, edit, and delete its own panels
+  with the same options.
+- Run grouping by config keys or run fields (group, job type, state, user),
+  inherited from the web run set or chosen in the app, draws one mean, min,
+  max, or median line per group inside a min-to-max or standard deviation
+  band. Web run colours are used in charts and legends.
+- Line plot settings, panels, grouping, and run selection default to the
+  signed-in user's W&B web workspace for the project. Settings changed in the
+  app override the web values until the plot is reset.
 - Image history with step selection and a full-screen gallery.
 - ARIA conversations using W&B's agent API, including history, continuation,
   clarification questions, cancellation, feedback, and references. Availability

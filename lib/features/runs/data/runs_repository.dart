@@ -231,16 +231,15 @@ class RunsRepository {
     }).toList();
   }
 
-  /// The web's "random sampling" aggregation: [samples] evenly spaced rows
-  /// with no band. A history key chosen as [xAxis] is fetched with the
-  /// metrics; time axes are derived from `_timestamp` by the chart.
+  /// The web's "random sampling" aggregation: 1500 evenly spaced rows with
+  /// no band. A history key chosen as [xAxis] is fetched with the metrics;
+  /// time axes take their position from `_timestamp`, like bucketed rows.
   Future<List<MetricSeries>> getSampledHistory({
     required String entity,
     required String project,
     required String runName,
     required List<String> keys,
     required String xAxis,
-    int samples = 1500,
   }) async {
     final xKey =
         const {'_step', '_absolute_runtime', '_timestamp'}.contains(xAxis)
@@ -261,7 +260,7 @@ class RunsRepository {
                   if (xKey != null) xKey,
                   ...keys,
                 }.toList(),
-            'samples': samples,
+            'samples': 1500,
           }),
         ],
       },
@@ -271,15 +270,24 @@ class RunsRepository {
             const [])
         .map(_sampledHistoryRowAsMap)
         .toList(growable: false);
+    final origin =
+        rows.map((row) => row['_timestamp']).whereType<num>().firstOrNull;
     return keys.map((key) {
       final points = <MetricPoint>[];
       for (final (index, row) in rows.indexed) {
         final value = row[key];
-        final x = xKey == null ? null : row[xKey];
-        if (value is! num || !value.isFinite || (xKey != null && x is! num)) {
+        final timestamp = row['_timestamp'];
+        final Object? x = switch (xAxis) {
+          '_step' => row['_step'] ?? index,
+          // Wall time arrives in seconds; the chart formats milliseconds.
+          '_timestamp' => timestamp is num ? timestamp * 1000 : null,
+          '_absolute_runtime' =>
+            timestamp is num && origin != null ? timestamp - origin : null,
+          _ => row[xKey],
+        };
+        if (value is! num || !value.isFinite || x is! num || !x.isFinite) {
           continue;
         }
-        final timestamp = row['_timestamp'];
         points.add(
           MetricPoint(
             step: row['_step'] as num? ?? index,
@@ -290,7 +298,7 @@ class RunsRepository {
                       (timestamp * 1000).round(),
                     )
                     : null,
-            x: x is num ? x.toDouble() : null,
+            x: x.toDouble(),
           ),
         );
       }

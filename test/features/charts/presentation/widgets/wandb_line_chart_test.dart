@@ -84,4 +84,38 @@ void main() {
       hasLength(1),
     );
   });
+
+  testWidgets('legend position, line colour and dash reach the chart', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: WandbLineChart(
+            series: [
+              MetricSeries(
+                key: 'a',
+                points: [
+                  MetricPoint(step: 0, value: 1),
+                  MetricPoint(step: 1, value: 2),
+                ],
+                color: 0xFFFF0000,
+                dashArray: [6, 3],
+              ),
+            ],
+            legendPosition: 'east',
+            showLegend: true,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final chart = tester.widget<SfCartesianChart>(
+      find.byType(SfCartesianChart),
+    );
+    expect(chart.legend.position, LegendPosition.right);
+    final line = chart.series.whereType<LineSeries>().single;
+    expect(line.color, const Color(0xFFFF0000));
+    expect(line.dashArray, [6, 3]);
+  });
 }

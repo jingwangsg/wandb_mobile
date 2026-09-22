@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wandb_mobile/core/providers/mobile_preferences.dart';
 import 'package:wandb_mobile/features/charts/models/metric_chart_rule.dart';
+import 'package:wandb_mobile/features/charts/models/panel_spec.dart';
 import 'package:wandb_mobile/features/charts/models/workspace_settings.dart';
 
 void main() {
@@ -84,7 +85,7 @@ void main() {
     expect(base.pointAggregation, 'sampling');
     expect(base.legendPosition, 'south');
     expect(base.useAutoMin, true);
-    expect(settings.apply(base, 'other/metric'), base);
+    expect(settings.apply(base, PanelSpec.metric('other/metric')), base);
     expect(settings.maxRuns, 25);
   });
 
@@ -93,41 +94,48 @@ void main() {
     const scoped = MetricChartRule(smoothing: 0.4, logScale: true);
     const preferences = MobilePreferences(defaultRules: {'team/p': scoped});
     expect(
-      preferences.inheritedRuleFor('team/p', 'other/metric', settings),
+      preferences.inheritedRuleFor(
+        'team/p',
+        PanelSpec.metric('other/metric'),
+        settings,
+      ),
       scoped,
     );
     final rule = preferences.inheritedRuleFor(
       'team/p',
-      'train/accuracy',
+      PanelSpec.metric('train/accuracy'),
       settings,
     );
     expect(rule.xAxis, 'train/global_step');
     expect(rule.smoothingType, 'none');
     expect(rule.smooths, false);
     expect(rule.logScale, true);
-    expect(preferences.inheritedRuleFor('other', 'x', settings), base);
     expect(
-      preferences.inheritedRuleFor('other', 'x', null),
+      preferences.inheritedRuleFor('other', PanelSpec.metric('x'), settings),
+      base,
+    );
+    expect(
+      preferences.inheritedRuleFor('other', PanelSpec.metric('x'), null),
       MetricChartRule.defaults,
     );
   });
 
   test('section settings override the workspace per key', () {
-    final rule = settings.apply(base, 'train/accuracy');
+    final rule = settings.apply(base, PanelSpec.metric('train/accuracy'));
     expect(rule.xAxis, 'train/global_step');
     expect(rule.smoothingType, 'none', reason: 'the section turns it off');
     expect(rule.smooths, false);
   });
 
   test('inactive legacy section keys are ignored', () {
-    final rule = settings.apply(base, 'eval/accuracy');
+    final rule = settings.apply(base, PanelSpec.metric('eval/accuracy'));
     expect(rule.xAxis, '_runtime');
     expect(rule.smoothing, 0.9);
     expect(rule.smoothingType, 'exponential');
   });
 
   test('panel overrides win and null ranges stay automatic', () {
-    final rule = settings.apply(base, 'train/loss');
+    final rule = settings.apply(base, PanelSpec.metric('train/loss'));
     expect(rule.xAxis, 'train/global_step');
     expect(rule.resolvedMax, 0.5);
     expect(rule.useAutoMin, true);
@@ -138,17 +146,17 @@ void main() {
   });
 
   test('every web smoothing type is carried with its own parameter', () {
-    final gaussian = settings.apply(base, 'other/gaussian');
+    final gaussian = settings.apply(base, PanelSpec.metric('other/gaussian'));
     expect(gaussian.smoothingType, 'gaussian');
     expect(gaussian.smoothing, 5);
     expect(
-      settings.apply(base, 'train/loss').smoothingType,
+      settings.apply(base, PanelSpec.metric('train/loss')).smoothingType,
       'exponentialTimeWeighted',
     );
   });
 
   test('panel overrides carry outliers, legend position and aggregation', () {
-    final rule = settings.apply(base, 'other/steep');
+    final rule = settings.apply(base, PanelSpec.metric('other/steep'));
     expect(rule.smoothing, 1);
     expect(rule.ignoreOutliers, false, reason: 'include-outliers wins');
     expect(rule.legendPosition, 'east');
@@ -213,10 +221,151 @@ void main() {
     expect(legacy.maxRuns, 10);
   });
 
+  test('explicit panels, hidden metrics, grouping and colours are read', () {
+    final workspace = WorkspaceSettings.fromSpec({
+      'section': {
+        'customRunColors': {'run-a': '#ff0000', 'run-b': 'rgb(1,2,3)'},
+        'panelBankConfig': {
+          'sections': [
+            {
+              'name': 'Evaluation',
+              'sectionSettings': {
+                'linePlot': {'xAxis': 'epoch'},
+              },
+              'panels': [
+                {
+                  '__id__': 'p1',
+                  'viewType': 'Run History Line Plot',
+                  'config': {
+                    'metrics': ['a', 'b'],
+                    'chartTitle': 'A and B',
+                    'smoothingWeight': 0.5,
+                  },
+                },
+                {'__id__': 'p2', 'viewType': 'Run Comparer', 'config': {}},
+              ],
+            },
+            {
+              'name': 'Hidden Panels',
+              'panels': [
+                {
+                  '__id__': 'h1',
+                  'viewType': 'Run History Line Plot',
+                  'config': {
+                    'metrics': ['noise'],
+                  },
+                },
+                {
+                  '__id__': 'h2',
+                  'viewType': 'Run History Line Plot',
+                  'config': {
+                    'metrics': ['a'],
+                    'expressions': [r'${a} * 2'],
+                  },
+                },
+              ],
+            },
+          ],
+        },
+        'runSets': [
+          {
+            'grouping': [
+              {'section': 'config', 'name': 'lr'},
+              {'section': 'run', 'name': 'group'},
+            ],
+          },
+        ],
+      },
+    });
+    expect(workspace.panels.map((p) => p.id), ['p1']);
+    expect(workspace.panels.single.displayTitle, 'A and B');
+    expect(workspace.hiddenMetrics, {'noise'});
+    expect(workspace.grouping, ['config:lr', 'run:group']);
+    expect(workspace.runColors, {'run-a': 0xFFFF0000});
+    final rule = workspace.apply(
+      MetricChartRule.defaults,
+      workspace.panels.single,
+    );
+    expect(rule.xAxis, 'epoch', reason: 'the panel takes its section layer');
+    expect(rule.smoothing, 0.5);
+  });
+
+  test('group aggregation and band are inherited', () {
+    final grouped = WorkspaceSettings.fromSpec({
+      'section': {
+        'workspaceSettings': {
+          'linePlot': {'groupAgg': 'median', 'groupArea': 'stddev'},
+        },
+      },
+    });
+    expect(grouped.workspaceDefaults.groupAgg, 'median');
+    expect(grouped.workspaceDefaults.groupArea, 'stddev');
+    expect(WorkspaceSettings.fromSpec({}).workspaceDefaults.groupAgg, 'mean');
+  });
+
+  test("a saved single-metric panel is that metric's auto panel in its web "
+      'section, and system panels stay with the hardware charts', () {
+    final saved = WorkspaceSettings.fromSpec({
+      'section': {
+        'panelBankConfig': {
+          'sections': [
+            {
+              'name': 'Evaluation',
+              'panels': [
+                {
+                  '__id__': 'abc',
+                  'viewType': 'Run History Line Plot',
+                  'config': {
+                    'metrics': ['loss'],
+                    'chartTitle': 'Training loss',
+                    'smoothingWeight': 0.8,
+                    'yLogScale': true,
+                  },
+                },
+              ],
+            },
+            {
+              'name': 'System',
+              'panels': [
+                {
+                  '__id__': 'sys',
+                  'viewType': 'Run History Line Plot',
+                  'config': {
+                    'metrics': ['system/gpu.0.gpu', 'system/gpu.1.gpu'],
+                  },
+                },
+              ],
+            },
+          ],
+          'panelConfigOverrides': {
+            'loss': {
+              'config': {'smoothingWeight': 0.2, 'xAxis': 'epoch'},
+            },
+          },
+        },
+      },
+    });
+    final panel = saved.panels.single;
+    expect(
+      panel,
+      const PanelSpec(
+        id: 'loss',
+        section: 'Evaluation',
+        title: 'Training loss',
+        metrics: ['loss'],
+      ),
+    );
+    expect(panel.isAuto, true);
+    final rule = saved.apply(MetricChartRule.defaults, panel);
+    expect(rule.smoothing, 0.8, reason: 'the saved panel is newer');
+    expect(rule.logScale, true);
+    expect(rule.xAxis, 'epoch', reason: 'override keys the panel lacks apply');
+  });
+
   test('an empty spec changes nothing', () {
     final empty = WorkspaceSettings.fromSpec({});
     expect(empty.workspaceDefaults, MetricChartRule.defaults);
-    expect(empty.apply(base, 'loss'), base);
+    expect(empty.apply(base, PanelSpec.metric('loss')), base);
     expect(empty.maxRuns, isNull);
   });
 }

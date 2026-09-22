@@ -28,6 +28,8 @@ class MetricChartRule {
     this.ignoreOutliers = false,
     this.pointAggregation = 'bucketing',
     this.legendPosition = 'south',
+    this.groupAgg = 'mean',
+    this.groupArea = 'minmax',
     this.logScale = false,
     this.useAutoMin = true,
     this.min,
@@ -57,6 +59,10 @@ class MetricChartRule {
   /// `bucketing` (the web's full fidelity) or `sampling`.
   final String pointAggregation;
   final String legendPosition;
+
+  /// How grouped runs combine and which spread the band shows.
+  final String groupAgg;
+  final String groupArea;
   final bool logScale;
   final bool useAutoMin;
   final double? min;
@@ -82,6 +88,8 @@ class MetricChartRule {
     bool? ignoreOutliers,
     String? pointAggregation,
     String? legendPosition,
+    String? groupAgg,
+    String? groupArea,
     bool? logScale,
     bool? useAutoMin,
     double? min,
@@ -104,6 +112,8 @@ class MetricChartRule {
       ignoreOutliers: ignoreOutliers ?? this.ignoreOutliers,
       pointAggregation: pointAggregation ?? this.pointAggregation,
       legendPosition: legendPosition ?? this.legendPosition,
+      groupAgg: groupAgg ?? this.groupAgg,
+      groupArea: groupArea ?? this.groupArea,
       logScale: logScale ?? this.logScale,
       useAutoMin: useAutoMin ?? this.useAutoMin,
       min: clearMin ? null : (min ?? this.min),
@@ -125,6 +135,8 @@ class MetricChartRule {
       'ignoreOutliers': ignoreOutliers,
       'pointAggregation': pointAggregation,
       'legendPosition': legendPosition,
+      'groupAgg': groupAgg,
+      'groupArea': groupArea,
       'logScale': logScale,
       'useAutoMin': useAutoMin,
       'min': min,
@@ -147,6 +159,8 @@ class MetricChartRule {
       ignoreOutliers: json['ignoreOutliers'] as bool? ?? false,
       pointAggregation: json['pointAggregation'] as String? ?? 'bucketing',
       legendPosition: json['legendPosition'] as String? ?? 'south',
+      groupAgg: json['groupAgg'] as String? ?? 'mean',
+      groupArea: json['groupArea'] as String? ?? 'minmax',
       logScale: json['logScale'] as bool? ?? false,
       useAutoMin: json['useAutoMin'] as bool? ?? true,
       min: (json['min'] as num?)?.toDouble(),
@@ -170,6 +184,8 @@ class MetricChartRule {
         other.ignoreOutliers == ignoreOutliers &&
         other.pointAggregation == pointAggregation &&
         other.legendPosition == legendPosition &&
+        other.groupAgg == groupAgg &&
+        other.groupArea == groupArea &&
         other.logScale == logScale &&
         other.useAutoMin == useAutoMin &&
         other.min == min &&
@@ -190,6 +206,8 @@ class MetricChartRule {
     ignoreOutliers,
     pointAggregation,
     legendPosition,
+    groupAgg,
+    groupArea,
     logScale,
     useAutoMin,
     min,

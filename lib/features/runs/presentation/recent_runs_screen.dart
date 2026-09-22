@@ -13,6 +13,7 @@ import '../../../core/theme/colors.dart';
 import '../../../core/utils/format_utils.dart';
 import '../../../core/widgets/mobile_controls.dart';
 import '../../../core/widgets/wandb_icon.dart';
+import '../../charts/models/panel_spec.dart';
 import '../../charts/providers/panel_providers.dart';
 import '../../charts/presentation/widgets/wandb_line_chart.dart';
 import '../data/runs_repository.dart';
@@ -220,7 +221,7 @@ class RunCard extends ConsumerWidget {
               panelSeriesProvider((
                 project: project,
                 runName: run.name,
-                metric: metric,
+                panel: PanelSpec.metric(metric),
               )),
             );
     final stateColor = WandbColors.forRunState(run.state.name);

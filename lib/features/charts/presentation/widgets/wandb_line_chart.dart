@@ -114,7 +114,8 @@ class _WandbLineChartState extends State<WandbLineChart> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final processed =
-            widget.series.map((series) {
+            widget.series.indexed.map((entry) {
+              final (index, series) = entry;
               final origin =
                   series.points
                       .where((p) => p.timestamp != null)
@@ -169,6 +170,11 @@ class _WandbLineChartState extends State<WandbLineChart> {
                 raw: banded ? points : lttbDownsample(points, target),
                 points: banded ? smoothed : lttbDownsample(smoothed, target),
                 smoothed: !identical(smoothed, points),
+                color:
+                    series.color != null
+                        ? Color(series.color!)
+                        : WandbColors.seriesColor(index),
+                dashArray: series.dashArray,
               );
             }).toList();
         // "Exclude outliers": scale to the lines and let band spikes clip.
@@ -289,7 +295,7 @@ class _WandbLineChartState extends State<WandbLineChart> {
                     ),
                   ),
           series: [
-            for (final (index, line) in processed.indexed) ...[
+            for (final line in processed) ...[
               if (line.points.any((point) => point.low != null))
                 RangeAreaSeries<MetricPoint, num>(
                   dataSource: line.points,
@@ -304,7 +310,7 @@ class _WandbLineChartState extends State<WandbLineChart> {
                           widget.logScale && (point.high ?? 0) <= 0
                               ? null
                               : point.high,
-                  color: WandbColors.seriesColor(index).withValues(alpha: 0.18),
+                  color: line.color.withValues(alpha: 0.18),
                   borderWidth: 0,
                   animationDuration: 0,
                   enableTrackball: false,
@@ -322,7 +328,7 @@ class _WandbLineChartState extends State<WandbLineChart> {
                   emptyPointSettings: const EmptyPointSettings(
                     mode: EmptyPointMode.gap,
                   ),
-                  color: WandbColors.seriesColor(index).withValues(alpha: 0.3),
+                  color: line.color.withValues(alpha: 0.3),
                   width: 1,
                   animationDuration: 0,
                   enableTrackball: false,
@@ -340,7 +346,8 @@ class _WandbLineChartState extends State<WandbLineChart> {
                 emptyPointSettings: const EmptyPointSettings(
                   mode: EmptyPointMode.gap,
                 ),
-                color: WandbColors.seriesColor(index),
+                color: line.color,
+                dashArray: line.dashArray,
                 width: 1.6,
                 animationDuration: 0,
                 markerSettings: MarkerSettings(

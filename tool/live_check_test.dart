@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:wandb_mobile/core/providers/api_client_provider.dart';
 import 'package:wandb_mobile/core/models/resource_refs.dart';
 import 'package:wandb_mobile/core/providers/mobile_preferences.dart';
+import 'package:wandb_mobile/features/charts/models/panel_spec.dart';
 import 'package:wandb_mobile/features/charts/providers/panel_providers.dart';
 import 'package:wandb_mobile/features/auth/providers/auth_providers.dart';
 import 'package:wandb_mobile/features/projects/providers/projects_providers.dart';
@@ -70,7 +71,7 @@ void main() {
           final historyProvider = panelSeriesProvider((
             project: const ProjectRef(entity: entity, project: project),
             runName: run.name,
-            metric: metric,
+            panel: PanelSpec.metric(metric),
           ));
           // Hold the subscription a chart widget holds: an unlistened
           // autoDispose provider is disposed mid-flight and returns nothing.
@@ -171,7 +172,7 @@ void main() {
           final comparisonProvider = panelSeriesProvider((
             project: const ProjectRef(entity: entity, project: project),
             runName: null,
-            metric: metric,
+            panel: PanelSpec.metric(metric),
           ));
           // Keep the same active subscription that the Panels widget owns.
           final comparisonSubscription = container.listen(

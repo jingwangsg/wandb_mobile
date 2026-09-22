@@ -8,6 +8,7 @@ import 'package:wandb_mobile/core/utils/downsampling.dart';
 import 'package:wandb_mobile/features/auth/providers/auth_providers.dart';
 import 'package:wandb_mobile/features/charts/models/image_frame.dart';
 import 'package:wandb_mobile/features/charts/models/metric_chart_rule.dart';
+import 'package:wandb_mobile/features/charts/models/panel_spec.dart';
 import 'package:wandb_mobile/features/notifications/data/push_service.dart';
 import 'package:wandb_mobile/features/runs/presentation/widgets/run_logs_view.dart';
 
@@ -81,7 +82,11 @@ void main() {
       expect(restored.state.starredMetrics, first.state.starredMetrics);
       expect(restored.state.runVisibility['team/project'], {'run-1': false});
       expect(restored.state.visibleRunLimits['team/project'], 20);
-      final rule = restored.state.ruleFor('other-project', 'train/loss', null);
+      final rule = restored.state.ruleFor(
+        'other-project',
+        PanelSpec.metric('train/loss'),
+        null,
+      );
       expect(rule.logScale, true);
       expect(rule.xAxis, 'epoch');
       expect(restored.state.theme, ThemeMode.light);
@@ -93,6 +98,38 @@ void main() {
       );
       await first.resetDefaults('team/project');
       expect(first.state.defaultRules.containsKey('team/project'), false);
+      const panel = PanelSpec(
+        id: 'panel-1',
+        section: 'Custom',
+        metrics: ['a', 'b'],
+        expressions: [r'${a} / ${b}'],
+      );
+      await first.setCustomPanel('team/project', panel);
+      await first.setCustomPanel(
+        'team/project',
+        const PanelSpec(id: 'panel-2', section: 'Custom', metrics: ['b']),
+      );
+      // Editing keeps the panel's place.
+      await first.setCustomPanel(
+        'team/project',
+        const PanelSpec(id: 'panel-1', section: 'Custom', metrics: ['a']),
+      );
+      await first.setGrouping('team/project', ['config:lr']);
+      final again = MobilePreferencesNotifier(store, 'account-a');
+      addTearDown(again.dispose);
+      expect(
+        again.state.customPanels['team/project']?.map(
+          (p) => '${p.id}:${p.metrics.join()}',
+        ),
+        ['panel-1:a', 'panel-2:b'],
+      );
+      expect(again.state.grouping['team/project'], ['config:lr']);
+      await first.removeCustomPanel('team/project', 'panel-1');
+      expect(first.state.customPanels['team/project']?.map((p) => p.id), [
+        'panel-2',
+      ]);
+      await first.resetGrouping('team/project');
+      expect(first.state.grouping.containsKey('team/project'), false);
       expect(
         MobilePreferences.fromJson(restored.state.toJson()).toJson(),
         restored.state.toJson(),
@@ -113,7 +150,12 @@ void main() {
       'team/project': {'run-1': false},
     });
     expect(migrated.toJson().containsKey('hiddenRuns'), false);
-    expect(migrated.ruleFor('team/project', 'train/loss', null).xAxis, '_step');
+    expect(
+      migrated
+          .ruleFor('team/project', PanelSpec.metric('train/loss'), null)
+          .xAxis,
+      '_step',
+    );
   });
 
   test(
