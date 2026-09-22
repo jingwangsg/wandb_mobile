@@ -248,3 +248,52 @@ Delivered artifact:
 - `~/Downloads/WandbMobile-2.0.4-preview-20260922.apk`
 - Version 2.0.4, versionCode 6; universal release APK, 62,644,765 bytes.
 - SHA-256: `6f2ca3aace1ecc95ae56fcaf635b39b8529a0901c59584cd8dd3436d4ef4ef49`.
+
+## Preview 2.1.0: web panels, expressions, grouping, run colours, September 22
+
+The second half of the web panel-settings parity, requested as one batch:
+
+- Panels are read from the web workspace's `panelBankConfig`: a panel with
+  several metrics, a metric regex (when `useMetricRegex` is on), expressions
+  and a chart title draws as on the web; panels in "Hidden Panels" hide
+  their metric; a saved single-metric panel is that metric's auto panel in
+  its web section, keeping its title, with the panel config as the metric's
+  override; web panels made only of `system/` metrics are left to the
+  events-based System section.
+- Expressions follow the web syntax: `${key}` reads a metric at the current
+  bucket, `${key:min|max|avg|first|last}` an aggregate over the run, combined
+  with `+ - * / ^` and parentheses. Malformed expressions are rejected in the
+  editor and skipped when inherited.
+- The app adds, edits and deletes its own panels (title, metrics, regex,
+  expressions), stored per project or run.
+- Run grouping by config keys or run fields (group, job type, state, user)
+  is inherited from the web run set or chosen in the app, with a reset to the
+  web's choice. Every run is resampled onto one grid and each group draws a
+  mean, min, max or median line inside a min-to-max or standard deviation
+  band (`groupAgg`/`groupArea`, editable in Line plot settings). Changing
+  grouping re-aggregates fetched history instead of refetching it.
+- Each run's lines take the run's colour (the web's `customRunColors`, else
+  the palette by run index, which the page legend uses too) and a dash per
+  metric; grouped panels colour by group and the page legend lists groups.
+- Sampled history positions time axes from `_timestamp` like bucketed
+  history, so grouping and the chart agree on any axis.
+
+Verification: `flutter analyze` (79 pre-existing info-level lints, none in
+touched files), `flutter test` with 145 passing tests, `node
+server/scripts/check-wandb-schema.mjs` 26/26, the read-only live check against
+`nv-gear/gr00t2_pretrain/rz2hg2jr` (416 bucketed loss points, 407 on the
+`_runtime` axis, 8 web panel overrides), and three independent review passes
+(correctness, simplicity, specification) over two rounds approving the final
+tree.
+
+Delivered artifact:
+
+- `~/Downloads/WandbMobile-2.1.0-preview-20260922.apk`
+- Version 2.1.0, versionCode 7; universal release APK, 63,169,053 bytes.
+- Target API 36; ARM64, ARMv7, and x86-64. APK v2 signature verified, still
+  using the development signing identity.
+- SHA-256: `9571d0b003b01e48ac08c30e43fa359bfe4d08b83c0d350d78716711dd088892`.
+- Installed and exercised on the API 35 emulator.
+
+Not covered, for a later batch: the web's display variants other than the
+band, legend field templates, `xExpression`, and decimal-comma input.
