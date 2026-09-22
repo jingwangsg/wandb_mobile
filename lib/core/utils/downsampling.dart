@@ -85,14 +85,87 @@ List<MetricPoint> timeWeightedSmoothing(List<MetricPoint> data, double weight) {
     final decay = math.pow(smoothing, distance).toDouble();
     last = last * decay + point.value;
     debias = debias * decay + 1;
-    // The band stays raw: only the line is smoothed, as on the web.
-    return MetricPoint(
-      step: point.step,
-      value: last / debias,
-      timestamp: point.timestamp,
-      x: point.x,
-      low: point.low,
-      high: point.high,
-    );
+    return _withValue(point, last / debias);
   }).toList();
 }
+
+/// The web's debiased exponential moving average.
+List<MetricPoint> exponentialSmoothing(List<MetricPoint> data, double weight) {
+  if (weight <= 0 || data.length < 2) return data;
+  final w = weight.clamp(0, 0.999);
+  var last = 0.0;
+  var debias = 0.0;
+  return [
+    for (final point in data)
+      _withValue(
+        point,
+        (last = last * w + point.value * (1 - w)) /
+            (debias = debias * w + (1 - w)),
+      ),
+  ];
+}
+
+/// Gaussian kernel over neighbouring points; [sigma] is in points.
+List<MetricPoint> gaussianSmoothing(List<MetricPoint> data, double sigma) {
+  if (sigma <= 0 || data.length < 2) return data;
+  final radius = (3 * sigma).ceil();
+  return [
+    for (final (index, point) in data.indexed)
+      _withValue(point, () {
+        var sum = 0.0;
+        var norm = 0.0;
+        final start = math.max(0, index - radius);
+        final end = math.min(data.length - 1, index + radius);
+        for (var j = start; j <= end; j++) {
+          final k = math.exp(
+            -((j - index) * (j - index)) / (2 * sigma * sigma),
+          );
+          sum += data[j].value * k;
+          norm += k;
+        }
+        return sum / norm;
+      }()),
+  ];
+}
+
+/// Mean of a centred window of [window] points.
+List<MetricPoint> runningAverage(List<MetricPoint> data, int window) {
+  if (window <= 1 || data.length < 2) return data;
+  final before = window ~/ 2;
+  return [
+    for (final (index, point) in data.indexed)
+      _withValue(point, () {
+        final start = math.max(0, index - before);
+        final end = math.min(data.length - 1, index - before + window - 1);
+        var sum = 0.0;
+        for (var j = start; j <= end; j++) {
+          sum += data[j].value;
+        }
+        return sum / (end - start + 1);
+      }()),
+  ];
+}
+
+/// Applies the web smoothing [type] with its [parameter]; `none` or a zero
+/// parameter returns [data] itself.
+List<MetricPoint> smoothPoints(
+  List<MetricPoint> data,
+  String type,
+  double parameter,
+) => switch (type) {
+  'exponentialTimeWeighted' => timeWeightedSmoothing(data, parameter),
+  'exponential' => exponentialSmoothing(data, parameter),
+  'gaussian' => gaussianSmoothing(data, parameter),
+  'average' => runningAverage(data, parameter.round()),
+  _ => data,
+};
+
+/// The band stays raw: only the line is smoothed, as on the web.
+MetricPoint _withValue(MetricPoint point, double value) => MetricPoint(
+  step: point.step,
+  value: value,
+  timestamp: point.timestamp,
+  x: point.x,
+  low: point.low,
+  high: point.high,
+);

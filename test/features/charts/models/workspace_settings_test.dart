@@ -14,6 +14,8 @@ void main() {
           'smoothingWeight': 0.2,
           'smoothingType': 'exponential',
           'maxRuns': 25,
+          'ignoreOutliers': true,
+          'pointVisualizationMethod': 'sampling',
         },
       },
       'panelBankConfig': {
@@ -53,7 +55,12 @@ void main() {
             'config': {'smoothingType': 'gaussian', 'smoothingWeight': 5},
           },
           'other/steep': {
-            'config': {'smoothingWeight': 1},
+            'config': {
+              'smoothingWeight': 1,
+              'excludeOutliers': 'include-outliers',
+              'legendPosition': 'east',
+              'pointVisualizationMethod': 'bucketing-gorilla',
+            },
           },
         },
       },
@@ -72,6 +79,10 @@ void main() {
   test('workspace defaults apply to metrics without closer settings', () {
     expect(base.xAxis, '_runtime');
     expect(base.smoothing, 0.2);
+    expect(base.smoothingType, 'exponential');
+    expect(base.ignoreOutliers, true);
+    expect(base.pointAggregation, 'sampling');
+    expect(base.legendPosition, 'south');
     expect(base.useAutoMin, true);
     expect(settings.apply(base, 'other/metric'), base);
     expect(settings.maxRuns, 25);
@@ -91,7 +102,8 @@ void main() {
       settings,
     );
     expect(rule.xAxis, 'train/global_step');
-    expect(rule.smoothing, 0);
+    expect(rule.smoothingType, 'none');
+    expect(rule.smooths, false);
     expect(rule.logScale, true);
     expect(preferences.inheritedRuleFor('other', 'x', settings), base);
     expect(
@@ -103,13 +115,15 @@ void main() {
   test('section settings override the workspace per key', () {
     final rule = settings.apply(base, 'train/accuracy');
     expect(rule.xAxis, 'train/global_step');
-    expect(rule.smoothing, 0, reason: 'the section turns smoothing off');
+    expect(rule.smoothingType, 'none', reason: 'the section turns it off');
+    expect(rule.smooths, false);
   });
 
   test('inactive legacy section keys are ignored', () {
     final rule = settings.apply(base, 'eval/accuracy');
     expect(rule.xAxis, '_runtime');
     expect(rule.smoothing, 0.9);
+    expect(rule.smoothingType, 'exponential');
   });
 
   test('panel overrides win and null ranges stay automatic', () {
@@ -123,12 +137,22 @@ void main() {
     expect(rule.smoothing, 0.99);
   });
 
-  test('unsupported smoothing types keep the inherited smoothing', () {
-    expect(settings.apply(base, 'other/gaussian').smoothing, 0.2);
+  test('every web smoothing type is carried with its own parameter', () {
+    final gaussian = settings.apply(base, 'other/gaussian');
+    expect(gaussian.smoothingType, 'gaussian');
+    expect(gaussian.smoothing, 5);
+    expect(
+      settings.apply(base, 'train/loss').smoothingType,
+      'exponentialTimeWeighted',
+    );
   });
 
-  test('smoothing weights are clamped to the slider range', () {
-    expect(settings.apply(base, 'other/steep').smoothing, 0.99);
+  test('panel overrides carry outliers, legend position and aggregation', () {
+    final rule = settings.apply(base, 'other/steep');
+    expect(rule.smoothing, 1);
+    expect(rule.ignoreOutliers, false, reason: 'include-outliers wins');
+    expect(rule.legendPosition, 'east');
+    expect(rule.pointAggregation, 'bucketing');
   });
 
   test('root 0 selections show only listed runs and root 1 hides them', () {

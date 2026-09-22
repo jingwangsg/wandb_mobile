@@ -35,4 +35,53 @@ void main() {
       expect(chart.series.whereType<LineSeries>(), hasLength(1));
     },
   );
+
+  testWidgets('smoothing keeps the original line behind the smoothed one and '
+      'excluding outliers scales to the lines', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: WandbLineChart(
+            series: series,
+            smoothing: 0.5,
+            smoothingType: 'exponential',
+            ignoreOutliers: true,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final chart = tester.widget<SfCartesianChart>(
+      find.byType(SfCartesianChart),
+    );
+    final lines = chart.series.whereType<LineSeries>().toList();
+    expect(lines, hasLength(2), reason: 'original plus smoothed');
+    expect(lines.first.isVisibleInLegend, false);
+    expect(lines.last.name, 'loss');
+    final yAxis = chart.primaryYAxis as NumericAxis;
+    // Smoothed values run from 1.2 down towards 0.4; the band's 1.3 and 0.35
+    // are outside the fitted range and clip.
+    expect(yAxis.maximum, lessThan(1.3));
+    expect(yAxis.minimum, greaterThan(0.35));
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: WandbLineChart(
+            series: series,
+            smoothing: 0.5,
+            showOriginal: false,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<SfCartesianChart>(find.byType(SfCartesianChart))
+          .series
+          .whereType<LineSeries>(),
+      hasLength(1),
+    );
+  });
 }

@@ -335,6 +335,7 @@ void main() {
           ),
         ),
       );
+      await tester.ensureVisible(find.text('Reset this line plot'));
       await tester.tap(find.text('Reset this line plot'));
       await tester.pumpAndSettle();
 

@@ -204,22 +204,31 @@ final panelSeriesProvider = FutureProvider.autoDispose.family<
       request.runName == null
           ? request.project.path
           : '${request.project.path}/${request.runName}';
-  // The server buckets along the chosen axis, so only an axis change (not
-  // smoothing or range edits) refetches.
-  final xAxis = ref.watch(
-    mobilePreferencesProvider.select(
-      (value) => value.ruleFor(scope, request.metric, workspace).xAxis,
-    ),
+  // The server shapes the data along the chosen axis and aggregation, so only
+  // those two settings (not smoothing or range edits) refetch.
+  final (xAxis, aggregation) = ref.watch(
+    mobilePreferencesProvider.select((value) {
+      final rule = value.ruleFor(scope, request.metric, workspace);
+      return (rule.xAxis, rule.pointAggregation);
+    }),
   );
-  if (request.runName != null) {
-    return repository.getBucketedHistory(
-      entity: request.project.entity,
-      project: request.project.project,
-      runName: request.runName!,
-      keys: [request.metric],
-      xAxis: xAxis,
-    );
-  }
+  Future<List<MetricSeries>> fetch(String runName) =>
+      aggregation == 'sampling'
+          ? repository.getSampledHistory(
+            entity: request.project.entity,
+            project: request.project.project,
+            runName: runName,
+            keys: [request.metric],
+            xAxis: xAxis,
+          )
+          : repository.getBucketedHistory(
+            entity: request.project.entity,
+            project: request.project.project,
+            runName: runName,
+            keys: [request.metric],
+            xAxis: xAxis,
+          );
+  if (request.runName != null) return fetch(request.runName!);
   final runs = await ref.watch(visibleRunsProvider(request.project).future);
   if (disposed) return const [];
   final lines = <MetricSeries>[];
@@ -227,13 +236,7 @@ final panelSeriesProvider = FutureProvider.autoDispose.family<
     final end = (start + 6).clamp(0, runs.visible.length);
     final batch = await Future.wait(
       runs.visible.sublist(start, end).map((run) async {
-        final history = await repository.getBucketedHistory(
-          entity: request.project.entity,
-          project: request.project.project,
-          runName: run.name,
-          keys: [request.metric],
-          xAxis: xAxis,
-        );
+        final history = await fetch(run.name);
         return MetricSeries(
           key: '${run.displayName} (${run.name})',
           points: history.firstOrNull?.points ?? [],

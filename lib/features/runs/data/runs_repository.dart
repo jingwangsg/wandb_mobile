@@ -231,6 +231,73 @@ class RunsRepository {
     }).toList();
   }
 
+  /// The web's "random sampling" aggregation: [samples] evenly spaced rows
+  /// with no band. A history key chosen as [xAxis] is fetched with the
+  /// metrics; time axes are derived from `_timestamp` by the chart.
+  Future<List<MetricSeries>> getSampledHistory({
+    required String entity,
+    required String project,
+    required String runName,
+    required List<String> keys,
+    required String xAxis,
+    int samples = 1500,
+  }) async {
+    final xKey =
+        const {'_step', '_absolute_runtime', '_timestamp'}.contains(xAxis)
+            ? null
+            : xAxis;
+    final data = await _client.query(
+      WandbQueries.getSampledHistory,
+      variables: {
+        'entity': entity,
+        'project': project,
+        'run': runName,
+        'specs': [
+          jsonEncode({
+            'keys':
+                {
+                  '_step',
+                  '_timestamp',
+                  if (xKey != null) xKey,
+                  ...keys,
+                }.toList(),
+            'samples': samples,
+          }),
+        ],
+      },
+    );
+    final run = (data['project'] as Map)['run'] as Map<String, dynamic>;
+    final rows = ((run['sampledHistory'] as List?)?.firstOrNull as List? ??
+            const [])
+        .map(_sampledHistoryRowAsMap)
+        .toList(growable: false);
+    return keys.map((key) {
+      final points = <MetricPoint>[];
+      for (final (index, row) in rows.indexed) {
+        final value = row[key];
+        final x = xKey == null ? null : row[xKey];
+        if (value is! num || !value.isFinite || (xKey != null && x is! num)) {
+          continue;
+        }
+        final timestamp = row['_timestamp'];
+        points.add(
+          MetricPoint(
+            step: row['_step'] as num? ?? index,
+            value: value.toDouble(),
+            timestamp:
+                timestamp is num
+                    ? DateTime.fromMillisecondsSinceEpoch(
+                      (timestamp * 1000).round(),
+                    )
+                    : null,
+            x: x is num ? x.toDouble() : null,
+          ),
+        );
+      }
+      return MetricSeries(key: key, points: points);
+    }).toList();
+  }
+
   /// Get full history for a step range (used when zoomed in).
   Future<List<Map<String, dynamic>>> getHistoryPage({
     required String entity,

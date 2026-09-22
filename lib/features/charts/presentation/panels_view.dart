@@ -611,6 +611,9 @@ class MetricPanelCard extends ConsumerWidget {
                     (lines) => WandbLineChart(
                       series: lines,
                       smoothing: rule.smoothing,
+                      smoothingType: rule.smoothingType,
+                      showOriginal: rule.showOriginal,
+                      ignoreOutliers: rule.ignoreOutliers,
                       logScale: rule.logScale,
                       xAxis: rule.xAxis,
                       xAxisMin: rule.resolvedXMin,
@@ -779,6 +782,10 @@ class _PanelDetailScreenState extends ConsumerState<PanelDetailScreen> {
                           (lines) => WandbLineChart(
                             series: lines,
                             smoothing: rule.smoothing,
+                            smoothingType: rule.smoothingType,
+                            showOriginal: rule.showOriginal,
+                            ignoreOutliers: rule.ignoreOutliers,
+                            legendPosition: rule.legendPosition,
                             logScale: rule.logScale,
                             xAxis: rule.xAxis,
                             xAxisMin: rule.resolvedXMin,

@@ -43,6 +43,27 @@ void main() {
     await tester.enterText(find.widgetWithText(TextField, 'Y max'), '');
     expect(saved?.useAutoMax, true);
 
+    await tester.ensureVisible(find.text('Exclude outliers when scaling'));
+    await tester.tap(find.text('Exclude outliers when scaling'));
+    await tester.pumpAndSettle();
+    expect(saved?.ignoreOutliers, true);
+
+    // Switching to a point-based smoothing type starts from its own default.
+    await tester.ensureVisible(find.text('Time weighted EMA'));
+    await tester.tap(find.text('Time weighted EMA'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Gaussian').last);
+    await tester.pumpAndSettle();
+    expect(saved?.smoothingType, 'gaussian');
+    expect(saved?.smoothing, 10);
+    expect(find.text('10 points'), findsOneWidget);
+
+    await tester.ensureVisible(find.text('Show original'));
+    await tester.tap(find.text('Show original'));
+    await tester.pumpAndSettle();
+    expect(saved?.showOriginal, false);
+
+    await tester.ensureVisible(find.text('Reset this line plot'));
     await tester.tap(find.text('Reset this line plot'));
     await tester.pumpAndSettle();
     expect(

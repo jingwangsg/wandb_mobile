@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:syncfusion_flutter_charts/charts.dart';
 
@@ -11,6 +13,10 @@ class WandbLineChart extends StatefulWidget {
     super.key,
     required this.series,
     this.smoothing = 0,
+    this.smoothingType = 'exponentialTimeWeighted',
+    this.showOriginal = true,
+    this.ignoreOutliers = false,
+    this.legendPosition = 'south',
     this.xAxis = '_step',
     this.title,
     this.yAxisMin,
@@ -23,6 +29,10 @@ class WandbLineChart extends StatefulWidget {
 
   final List<MetricSeries> series;
   final double smoothing;
+  final String smoothingType;
+  final bool showOriginal;
+  final bool ignoreOutliers;
+  final String legendPosition;
 
   /// `_step`, `_absolute_runtime`, `_timestamp`, or a history key whose value
   /// is held in [MetricPoint.x].
@@ -142,7 +152,11 @@ class _WandbLineChartState extends State<WandbLineChart> {
                   ),
                 );
               }
-              points = timeWeightedSmoothing(points, widget.smoothing);
+              final smoothed = smoothPoints(
+                points,
+                widget.smoothingType,
+                widget.smoothing,
+              );
               final target =
                   constraints.maxWidth.isFinite
                       ? constraints.maxWidth.round().clamp(120, 1200)
@@ -150,11 +164,34 @@ class _WandbLineChartState extends State<WandbLineChart> {
               // Bucketed points already number about one per pixel and their
               // bands must keep every extreme, so only raw rows are thinned.
               final banded = points.any((point) => point.low != null);
-              return MetricSeries(
+              return (
                 key: series.key,
-                points: banded ? points : lttbDownsample(points, target),
+                raw: banded ? points : lttbDownsample(points, target),
+                points: banded ? smoothed : lttbDownsample(smoothed, target),
+                smoothed: !identical(smoothed, points),
               );
             }).toList();
+        // "Exclude outliers": scale to the lines and let band spikes clip.
+        double? fitMin;
+        double? fitMax;
+        if (widget.ignoreOutliers) {
+          final values = [
+            for (final line in processed)
+              for (final point in line.points)
+                if (!widget.logScale || point.value > 0) point.value,
+          ];
+          if (values.isNotEmpty) {
+            final low = values.reduce(math.min);
+            final high = values.reduce(math.max);
+            if (high > low) {
+              final pad = (high - low) * 0.05;
+              fitMin = widget.logScale ? low / 1.1 : low - pad;
+              fitMax = widget.logScale ? high * 1.1 : high + pad;
+            }
+          }
+        }
+        final yMin = widget.yAxisMin ?? fitMin;
+        final yMax = widget.yAxisMax ?? fitMax;
         return SfCartesianChart(
           margin: const EdgeInsets.fromLTRB(4, 4, 8, 0),
           title: ChartTitle(
@@ -187,7 +224,12 @@ class _WandbLineChartState extends State<WandbLineChart> {
           },
           legend: Legend(
             isVisible: widget.showLegend && processed.length > 1,
-            position: LegendPosition.bottom,
+            position: switch (widget.legendPosition) {
+              'north' => LegendPosition.top,
+              'east' => LegendPosition.right,
+              'west' => LegendPosition.left,
+              _ => LegendPosition.bottom,
+            },
             // Every run stays readable; a scrolling row hid all but the first
             // few names.
             overflowMode: LegendItemOverflowMode.wrap,
@@ -213,14 +255,8 @@ class _WandbLineChartState extends State<WandbLineChart> {
           primaryYAxis:
               widget.logScale
                   ? LogarithmicAxis(
-                    minimum:
-                        widget.yAxisMin != null && widget.yAxisMin! > 0
-                            ? widget.yAxisMin
-                            : null,
-                    maximum:
-                        widget.yAxisMax != null && widget.yAxisMax! > 0
-                            ? widget.yAxisMax
-                            : null,
+                    minimum: yMin != null && yMin > 0 ? yMin : null,
+                    maximum: yMax != null && yMax > 0 ? yMax : null,
                     majorGridLines: MajorGridLines(
                       color: colors.outlineVariant,
                       width: 0.5,
@@ -234,8 +270,8 @@ class _WandbLineChartState extends State<WandbLineChart> {
                     ),
                   )
                   : NumericAxis(
-                    minimum: widget.yAxisMin,
-                    maximum: widget.yAxisMax,
+                    minimum: yMin,
+                    maximum: yMax,
                     // Fit the data like the web; the default padding for a
                     // vertical axis pulls the range down to zero.
                     rangePadding: ChartRangePadding.round,
@@ -270,6 +306,24 @@ class _WandbLineChartState extends State<WandbLineChart> {
                               : point.high,
                   color: WandbColors.seriesColor(index).withValues(alpha: 0.18),
                   borderWidth: 0,
+                  animationDuration: 0,
+                  enableTrackball: false,
+                  isVisibleInLegend: false,
+                ),
+              if (widget.showOriginal && line.smoothed)
+                LineSeries<MetricPoint, num>(
+                  dataSource: line.raw,
+                  xValueMapper: (point, _) => point.step,
+                  yValueMapper:
+                      (point, _) =>
+                          widget.logScale && point.value <= 0
+                              ? null
+                              : point.value,
+                  emptyPointSettings: const EmptyPointSettings(
+                    mode: EmptyPointMode.gap,
+                  ),
+                  color: WandbColors.seriesColor(index).withValues(alpha: 0.3),
+                  width: 1,
                   animationDuration: 0,
                   enableTrackball: false,
                   isVisibleInLegend: false,

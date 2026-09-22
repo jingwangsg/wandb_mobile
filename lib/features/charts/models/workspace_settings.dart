@@ -108,8 +108,7 @@ class WorkspaceSettings {
   }
 
   /// [rule] with the recognised keys of one web settings layer copied over
-  /// it. `null` values mean the layer leaves that key alone. Only exponential
-  /// smoothing maps onto the app's time weighted EMA; `none` disables it.
+  /// it. `null` values mean the layer leaves that key alone.
   static MetricChartRule _applyLayer(
     MetricChartRule rule,
     Map<String, dynamic> settings,
@@ -139,14 +138,30 @@ class WorkspaceSettings {
       rule = rule.copyWith(logScale: logScale);
     }
     final type = settings['smoothingType'];
+    if (type is String && smoothingTypes.contains(type)) {
+      rule = rule.copyWith(smoothingType: type);
+    }
     final weight = settings['smoothingWeight'];
-    if (type == 'none') {
-      rule = rule.copyWith(smoothing: 0);
-    } else if (weight is num &&
-        (type == null ||
-            type == 'exponential' ||
-            type == 'exponentialTimeWeighted')) {
-      rule = rule.copyWith(smoothing: weight.toDouble().clamp(0, 0.99));
+    if (weight is num && weight.isFinite) {
+      rule = rule.copyWith(smoothing: weight.toDouble());
+    }
+    // Workspace and section layers store ignoreOutliers; panel overrides
+    // store excludeOutliers as a string.
+    final outliers = switch (settings['excludeOutliers']) {
+      'exclude-outliers' => true,
+      'include-outliers' => false,
+      _ => settings['ignoreOutliers'],
+    };
+    if (outliers is bool) rule = rule.copyWith(ignoreOutliers: outliers);
+    final points = settings['pointVisualizationMethod'];
+    if (points is String) {
+      rule = rule.copyWith(
+        pointAggregation: points == 'sampling' ? 'sampling' : 'bucketing',
+      );
+    }
+    final legend = settings['legendPosition'];
+    if (legend is String && legendPositions.contains(legend)) {
+      rule = rule.copyWith(legendPosition: legend);
     }
     return rule;
   }

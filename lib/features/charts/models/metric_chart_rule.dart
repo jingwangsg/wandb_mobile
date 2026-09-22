@@ -1,7 +1,33 @@
+/// W&B smoothing types. The `smoothing` parameter is a weight in [0, 1) for
+/// the exponential types and a size in points for gaussian and average.
+const smoothingTypes = [
+  'exponentialTimeWeighted',
+  'exponential',
+  'gaussian',
+  'average',
+  'none',
+];
+
+String smoothingTypeLabel(String type) => switch (type) {
+  'exponentialTimeWeighted' => 'Time weighted EMA',
+  'exponential' => 'Exponential EMA',
+  'gaussian' => 'Gaussian',
+  'average' => 'Running average',
+  _ => 'No smoothing',
+};
+
+/// Web legend positions, as stored in panel configs.
+const legendPositions = ['north', 'south', 'east', 'west'];
+
 class MetricChartRule {
   const MetricChartRule({
     this.xAxis = '_step',
     this.smoothing = 0,
+    this.smoothingType = 'exponentialTimeWeighted',
+    this.showOriginal = true,
+    this.ignoreOutliers = false,
+    this.pointAggregation = 'bucketing',
+    this.legendPosition = 'south',
     this.logScale = false,
     this.useAutoMin = true,
     this.min,
@@ -19,6 +45,18 @@ class MetricChartRule {
   /// or any numeric history key.
   final String xAxis;
   final double smoothing;
+  final String smoothingType;
+
+  /// Draw the unsmoothed line faintly behind the smoothed one.
+  final bool showOriginal;
+
+  /// Scale the Y axis to the lines, letting band spikes clip, as the web's
+  /// "exclude extreme outliers when scaling" does.
+  final bool ignoreOutliers;
+
+  /// `bucketing` (the web's full fidelity) or `sampling`.
+  final String pointAggregation;
+  final String legendPosition;
   final bool logScale;
   final bool useAutoMin;
   final double? min;
@@ -34,9 +72,16 @@ class MetricChartRule {
   double? get resolvedXMin => useAutoXMin ? null : xMin;
   double? get resolvedXMax => useAutoXMax ? null : xMax;
 
+  bool get smooths => smoothingType != 'none' && smoothing > 0;
+
   MetricChartRule copyWith({
     String? xAxis,
     double? smoothing,
+    String? smoothingType,
+    bool? showOriginal,
+    bool? ignoreOutliers,
+    String? pointAggregation,
+    String? legendPosition,
     bool? logScale,
     bool? useAutoMin,
     double? min,
@@ -54,6 +99,11 @@ class MetricChartRule {
     return MetricChartRule(
       xAxis: xAxis ?? this.xAxis,
       smoothing: smoothing ?? this.smoothing,
+      smoothingType: smoothingType ?? this.smoothingType,
+      showOriginal: showOriginal ?? this.showOriginal,
+      ignoreOutliers: ignoreOutliers ?? this.ignoreOutliers,
+      pointAggregation: pointAggregation ?? this.pointAggregation,
+      legendPosition: legendPosition ?? this.legendPosition,
       logScale: logScale ?? this.logScale,
       useAutoMin: useAutoMin ?? this.useAutoMin,
       min: clearMin ? null : (min ?? this.min),
@@ -70,6 +120,11 @@ class MetricChartRule {
     return {
       'xAxis': xAxis,
       'smoothing': smoothing,
+      'smoothingType': smoothingType,
+      'showOriginal': showOriginal,
+      'ignoreOutliers': ignoreOutliers,
+      'pointAggregation': pointAggregation,
+      'legendPosition': legendPosition,
       'logScale': logScale,
       'useAutoMin': useAutoMin,
       'min': min,
@@ -86,6 +141,12 @@ class MetricChartRule {
     return MetricChartRule(
       xAxis: json['xAxis'] as String? ?? '_step',
       smoothing: (json['smoothing'] as num?)?.toDouble() ?? 0,
+      smoothingType:
+          json['smoothingType'] as String? ?? 'exponentialTimeWeighted',
+      showOriginal: json['showOriginal'] as bool? ?? true,
+      ignoreOutliers: json['ignoreOutliers'] as bool? ?? false,
+      pointAggregation: json['pointAggregation'] as String? ?? 'bucketing',
+      legendPosition: json['legendPosition'] as String? ?? 'south',
       logScale: json['logScale'] as bool? ?? false,
       useAutoMin: json['useAutoMin'] as bool? ?? true,
       min: (json['min'] as num?)?.toDouble(),
@@ -104,6 +165,11 @@ class MetricChartRule {
     return other is MetricChartRule &&
         other.xAxis == xAxis &&
         other.smoothing == smoothing &&
+        other.smoothingType == smoothingType &&
+        other.showOriginal == showOriginal &&
+        other.ignoreOutliers == ignoreOutliers &&
+        other.pointAggregation == pointAggregation &&
+        other.legendPosition == legendPosition &&
         other.logScale == logScale &&
         other.useAutoMin == useAutoMin &&
         other.min == min &&
@@ -116,9 +182,14 @@ class MetricChartRule {
   }
 
   @override
-  int get hashCode => Object.hash(
+  int get hashCode => Object.hashAll([
     xAxis,
     smoothing,
+    smoothingType,
+    showOriginal,
+    ignoreOutliers,
+    pointAggregation,
+    legendPosition,
     logScale,
     useAutoMin,
     min,
@@ -128,5 +199,5 @@ class MetricChartRule {
     xMin,
     useAutoXMax,
     xMax,
-  );
+  ]);
 }
